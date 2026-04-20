@@ -38,13 +38,8 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: `https://${getLocalIP()}:8443`,
+        target: 'https://www.houqicg.com:8443',
         changeOrigin: true,
-        secure: false
-      },
-      '/ws': {
-        target: `wss://${getLocalIP()}:8442`,
-        ws: true,
         secure: false
       }
     }
