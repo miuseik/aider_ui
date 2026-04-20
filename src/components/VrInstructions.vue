@@ -3,11 +3,11 @@
     <h2>🥽 VR 控制器使用说明</h2>
     <div class="instructions-content">
       <div class="instructions-image">
-        <img src="/media/telegrip_instructions.jpg" alt="VR 控制器使用说明" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <img src="/media/telegrip_instructions.jpg" alt="VR 控制器使用说明">
       </div>
       <div class="instructions-text">
         <div class="instruction-item">
-          <strong>设置：</strong>在头显浏览器中访问 <span style="font-family: monospace; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">{{ vrServerUrl }}</span> 并点击"开始"
+          <strong>设置：</strong>在头显浏览器中访问 <code>{{ vrServerUrl }}</code> 并点击“开始”
         </div>
         <div class="instruction-item grip-button">
           <strong>握持按钮：</strong>只要按住握持按钮，机械臂夹爪尖端就会跟踪您的相对控制器移动
@@ -20,15 +20,18 @@
         </div>
       </div>
     </div>
-    <div style="margin-top: 15px; text-align: center;">
-      <button @click="$emit('switch-vr')" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;">
-        🥽 切换到 VR 视图
-      </button>
+    <div style="margin-top: 16px; text-align: center;">
+      <el-button type="primary" size="large" @click="$emit('switch-vr')">
+        <el-icon><Monitor /></el-icon>
+        切换到 VR 视图
+      </el-button>
     </div>
   </div>
 </template>
 
 <script setup>
+import { Monitor } from '@element-plus/icons-vue'
+
 defineProps({
   vrServerUrl: {
     type: String,

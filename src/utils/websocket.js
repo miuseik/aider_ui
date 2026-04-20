@@ -28,6 +28,11 @@ class WebSocketClient {
         console.log('WebSocket 连接成功')
         this.isConnected = true
         this.reconnectAttempts = 0
+        
+        // 发送身份认证
+        this.send({ type: 'client' })
+        console.log('已发送 UI 客户端身份认证')
+        
         this.notifyHandlers({ type: 'connected' })
       }
 

@@ -1,88 +1,132 @@
 <template>
-  <div class="settings-modal" :class="{ show: visible }" @click.self="$emit('close')">
-    <div class="settings-content">
-      <div class="settings-header">
-        <div class="settings-title">系统配置</div>
-        <button class="close-button" @click="$emit('close')">×</button>
-      </div>
+  <div class="settings-content">
+    <el-form :model="config" label-position="top" size="large">
+      <el-divider content-position="left">
+        <span style="font-size: 16px; font-weight: 600;">🤖 机械臂</span>
+      </el-divider>
       
-      <form id="settingsForm" @submit.prevent="handleSave">
-        <div class="settings-section">
-          <h3>🤖 机械臂</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="leftArmName">左臂名称</label>
-              <input type="text" id="leftArmName" v-model="config.robot.left_arm.name">
-            </div>
-            <div class="form-group">
-              <label for="leftArmPort">左臂端口</label>
-              <input type="text" id="leftArmPort" v-model="config.robot.left_arm.port" placeholder="/dev/ttyACM0">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="rightArmName">右臂名称</label>
-              <input type="text" id="rightArmName" v-model="config.robot.right_arm.name">
-            </div>
-            <div class="form-group">
-              <label for="rightArmPort">右臂端口</label>
-              <input type="text" id="rightArmPort" v-model="config.robot.right_arm.port" placeholder="/dev/ttyACM1">
-            </div>
-          </div>
-        </div>
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="左臂名称">
+            <el-input v-model="config.robot.left_arm.name" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="左臂端口">
+            <el-input v-model="config.robot.left_arm.port" placeholder="/dev/ttyACM0" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="右臂名称">
+            <el-input v-model="config.robot.right_arm.name" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="右臂端口">
+            <el-input v-model="config.robot.right_arm.port" placeholder="/dev/ttyACM1" />
+          </el-form-item>
+        </el-col>
+      </el-row>
 
-        <div class="settings-section">
-          <h3>🌐 网络设置</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="httpsPort">HTTPS 端口</label>
-              <input type="number" id="httpsPort" v-model.number="config.network.https_port" min="1024" max="65535">
-            </div>
-            <div class="form-group">
-              <label for="websocketPort">WebSocket 端口</label>
-              <input type="number" id="websocketPort" v-model.number="config.network.websocket_port" min="1024" max="65535">
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="hostIp">主机 IP 地址</label>
-            <input type="text" id="hostIp" v-model="config.network.host_ip" placeholder="0.0.0.0">
-          </div>
-        </div>
+      <el-divider content-position="left">
+        <span style="font-size: 16px; font-weight: 600;">🌐 网络设置</span>
+      </el-divider>
+      
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="HTTPS 端口">
+            <el-input-number 
+              v-model="config.network.https_port" 
+              :min="1024" 
+              :max="65535"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="WebSocket 端口">
+            <el-input-number 
+              v-model="config.network.websocket_port" 
+              :min="1024" 
+              :max="65535"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      
+      <el-form-item label="主机 IP 地址">
+        <el-input v-model="config.network.host_ip" placeholder="0.0.0.0" />
+      </el-form-item>
 
-        <div class="settings-section">
-          <h3>🎮 控制参数</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="vrScale">VR 缩放系数</label>
-              <input type="number" id="vrScale" v-model.number="config.robot.vr_to_robot_scale" step="0.1" min="0.1" max="5.0">
-            </div>
-            <div class="form-group">
-              <label for="sendInterval">发送间隔 (毫秒)</label>
-              <input type="number" id="sendInterval" :value="sendIntervalMs" @input="$emit('update:sendIntervalMs', Number($event.target.value))" step="1" min="10" max="200">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="posStep">位置步长 (米)</label>
-              <input type="number" id="posStep" v-model.number="config.control.keyboard.pos_step" step="0.001" min="0.001" max="0.1">
-            </div>
-            <div class="form-group">
-              <label for="angleStep">角度步长 (度)</label>
-              <input type="number" id="angleStep" v-model.number="config.control.keyboard.angle_step" step="0.5" min="0.5" max="45">
-            </div>
-          </div>
-        </div>
+      <el-divider content-position="left">
+        <span style="font-size: 16px; font-weight: 600;">🎮 控制参数</span>
+      </el-divider>
+      
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="VR 缩放系数">
+            <el-input-number 
+              v-model="config.robot.vr_to_robot_scale" 
+              :step="0.1" 
+              :min="0.1" 
+              :max="5.0"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="发送间隔 (毫秒)">
+            <el-input-number 
+              :model-value="sendIntervalMs" 
+              @update:model-value="$emit('update:sendIntervalMs', $event)"
+              :step="1" 
+              :min="10" 
+              :max="200"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="位置步长 (米)">
+            <el-input-number 
+              v-model="config.control.keyboard.pos_step" 
+              :step="0.001" 
+              :min="0.001" 
+              :max="0.1"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="角度步长 (度)">
+            <el-input-number 
+              v-model="config.control.keyboard.angle_step" 
+              :step="0.5" 
+              :min="0.5" 
+              :max="45"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
 
-        <div class="button-row">
-          <button type="submit" class="save-button" :disabled="saving">
-            {{ saving ? '保存中...' : '💾 保存配置' }}
-          </button>
-          <button type="button" class="restart-button" :disabled="restarting" @click="handleRestart">
-            {{ restarting ? '重启中...' : '🔄 重启系统' }}
-          </button>
-        </div>
-      </form>
-    </div>
+      <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
+        <el-button @click="$emit('close')">取消</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">
+          {{ saving ? '保存中...' : '💾 保存配置' }}
+        </el-button>
+        <el-button type="danger" @click="handleRestart" :loading="restarting">
+          {{ restarting ? '重启中...' : '🔄 重启系统' }}
+        </el-button>
+      </div>
+    </el-form>
   </div>
 </template>
 

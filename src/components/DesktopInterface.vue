@@ -1,10 +1,7 @@
 <template>
   <div class="desktop-interface">
     <div class="desktop-header">
-      <div class="desktop-title">telegrip</div>
-      <div class="desktop-subtitle">通过 VR 控制器和键盘控制双臂机器人</div>
-      
-      <RobotStatus 
+      <RobotStatus
         :status="status"
         :is-robot-engaged="isRobotEngaged"
         :show-warning="showWarning"

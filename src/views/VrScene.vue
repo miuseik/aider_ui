@@ -255,7 +255,7 @@ function sendVRData(vrData) {
       gripActive: leftGripDown,
       trigger: vrData.leftController.buttons[0]?.value || 0,
       joystick: vrData.leftController.joystick,
-      buttons: vrData.leftController.buttons
+      // buttons: vrData.leftController.buttons
     } : {
       hand: 'left',
       position: { x: 0, y: 0, z: 0 },
@@ -263,7 +263,7 @@ function sendVRData(vrData) {
       gripActive: false,
       trigger: 0,
       joystick: { x: 0, y: 0 },
-      buttons: []
+      // buttons: []
     },
     rightController: vrData?.rightController ? {
       hand: 'right',
@@ -272,7 +272,7 @@ function sendVRData(vrData) {
       gripActive: rightGripDown,
       trigger: vrData.rightController.buttons[0]?.value || 0,
       joystick: vrData.rightController.joystick,
-      buttons: vrData.rightController.buttons
+      // buttons: vrData.rightController.buttons
     } : {
       hand: 'right',
       position: { x: 0, y: 0, z: 0 },
@@ -280,7 +280,7 @@ function sendVRData(vrData) {
       gripActive: false,
       trigger: 0,
       joystick: { x: 0, y: 0 },
-      buttons: []
+      // buttons: []
     }
   }
   
