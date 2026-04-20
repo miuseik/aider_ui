@@ -253,7 +253,7 @@ function sendVRData(vrData) {
       position: vrData.leftController.position,
       quaternion: vrData.leftController.quaternion,
       gripActive: leftGripDown,
-      trigger: leftTriggerDown ? 1 : 0,
+      trigger: vrData.leftController.buttons[0]?.value || 0,
       joystick: vrData.leftController.joystick,
       buttons: vrData.leftController.buttons
     } : {
@@ -270,7 +270,7 @@ function sendVRData(vrData) {
       position: vrData.rightController.position,
       quaternion: vrData.rightController.quaternion,
       gripActive: rightGripDown,
-      trigger: rightTriggerDown ? 1 : 0,
+      trigger: vrData.rightController.buttons[0]?.value || 0,
       joystick: vrData.rightController.joystick,
       buttons: vrData.rightController.buttons
     } : {
@@ -285,6 +285,24 @@ function sendVRData(vrData) {
   }
   
   websocket.send(JSON.stringify(dualControllerData))
+}
+
+// 重启系统
+async function restartSystem() {
+  try {
+    await fetch('/api/restart', {
+      method: 'POST'
+    })
+    // 3秒后刷新页面
+    setTimeout(() => {
+      window.location.reload()
+    }, 5000)
+  } catch (err) {
+    // 即使请求失败也刷新
+    setTimeout(() => {
+      window.location.reload()
+    }, 5000)
+  }
 }
 
 // 初始化数据面板（创建 3D 对象）
@@ -327,8 +345,6 @@ function setupRendererAnimationLoop() {
   
   // 监听场景的 enter-vr 事件，在进入 VR 时开始更新数据面板
   sceneEl.addEventListener('enter-vr', () => {
-    // A-Frame 已经设置了 animation loop，我们只需要在 tick 中更新
-    // 使用 A-Frame 的 tick 系统
     if (!sceneEl.hasAttribute('data-panel-updater')) {
       sceneEl.setAttribute('data-panel-updater', '')
       
@@ -340,6 +356,10 @@ function setupRendererAnimationLoop() {
             if (frame) {
               const referenceSpace = sceneEl.renderer.xr.getReferenceSpace()
               const session = sceneEl.renderer.xr.getSession()
+              
+              // 计算相对旋转
+              updateRelativeRotation()
+              
               updateDataPanelInFrame(0, frame, referenceSpace, session)
             }
           }
@@ -347,6 +367,70 @@ function setupRendererAnimationLoop() {
       })
     }
   })
+}
+
+// 更新相对旋转
+function updateRelativeRotation() {
+  const leftHand = document.querySelector('#leftHand')
+  const rightHand = document.querySelector('#rightHand')
+  const leftHandInfoText = document.querySelector('#leftHandInfo')
+  const rightHandInfoText = document.querySelector('#rightHandInfo')
+  
+  if (!leftHand || !rightHand) return
+  
+  // 左手相对旋转
+  if (leftGripDown && leftGripInitialRotation && leftHand.object3D.visible) {
+    const rot = leftHand.object3D.rotation
+    const currentRot = {
+      x: THREE.MathUtils.radToDeg(rot.x),
+      y: THREE.MathUtils.radToDeg(rot.y),
+      z: THREE.MathUtils.radToDeg(rot.z)
+    }
+    leftRelativeRotation = calculateRelativeRotation(currentRot, leftGripInitialRotation)
+    
+    if (leftGripInitialQuaternion) {
+      leftZAxisRotation = calculateZAxisRotation(
+        leftHand.object3D.quaternion,
+        leftGripInitialQuaternion
+      )
+    }
+    
+    // 更新左手文本显示
+    if (leftHandInfoText) {
+      const pos = leftHand.object3D.position
+      let text = `Pos: ${pos.x.toFixed(2)} ${pos.y.toFixed(2)} ${pos.z.toFixed(2)}\n`
+      text += `Rot: ${currentRot.x.toFixed(0)} ${currentRot.y.toFixed(0)} ${currentRot.z.toFixed(0)}\n`
+      text += `Z-Rot: ${leftZAxisRotation.toFixed(1)}°`
+      leftHandInfoText.setAttribute('value', text)
+    }
+  }
+  
+  // 右手相对旋转
+  if (rightGripDown && rightGripInitialRotation && rightHand.object3D.visible) {
+    const rot = rightHand.object3D.rotation
+    const currentRot = {
+      x: THREE.MathUtils.radToDeg(rot.x),
+      y: THREE.MathUtils.radToDeg(rot.y),
+      z: THREE.MathUtils.radToDeg(rot.z)
+    }
+    rightRelativeRotation = calculateRelativeRotation(currentRot, rightGripInitialRotation)
+    
+    if (rightGripInitialQuaternion) {
+      rightZAxisRotation = calculateZAxisRotation(
+        rightHand.object3D.quaternion,
+        rightGripInitialQuaternion
+      )
+    }
+    
+    // 更新右手文本显示
+    if (rightHandInfoText) {
+      const pos = rightHand.object3D.position
+      let text = `Pos: ${pos.x.toFixed(2)} ${pos.y.toFixed(2)} ${pos.z.toFixed(2)}\n`
+      text += `Rot: ${currentRot.x.toFixed(0)} ${currentRot.y.toFixed(0)} ${currentRot.z.toFixed(0)}\n`
+      text += `Z-Rot: ${rightZAxisRotation.toFixed(1)}°`
+      rightHandInfoText.setAttribute('value', text)
+    }
+  }
 }
 
 // 在 WebXR frame 中更新数据面板
@@ -433,7 +517,11 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
     ctx.fillText(isLeft ? '未检测到左手柄' : '未检测到右手柄', xPos, 210)
     return
   }
-  
+  // 检测左手 menu 键 (button 12)
+  if (controller.buttons[12]?.pressed) {
+    restartSystem()
+    return
+  }
   // 位置和旋转
   let posText = 'POS: 0.00, 0.00, 0.00'
   let rotText = 'ROT: 0.00, 0.00, 0.00'

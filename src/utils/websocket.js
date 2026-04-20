@@ -50,14 +50,10 @@ class WebSocketClient {
         this.isConnected = false
         this.notifyHandlers({ type: 'disconnected' })
         
-        // 自动重连
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.reconnectAttempts++
-          console.log(`${this.reconnectInterval / 1000}秒后尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
-          setTimeout(() => this.connect(), this.reconnectInterval)
-        } else {
-          console.error('达到最大重连次数,停止重连')
-        }
+        // 自动重连（无限重试）
+        this.reconnectAttempts++
+        console.log(`${this.reconnectInterval / 1000}秒后尝试重连 (第${this.reconnectAttempts}次)`)
+        setTimeout(() => this.connect(), this.reconnectInterval)
       }
     } catch (error) {
       console.error('创建 WebSocket 连接失败:', error)
