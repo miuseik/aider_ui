@@ -14,6 +14,13 @@
           </div>
           
           <el-button 
+            icon="Tools" 
+            circle 
+            @click="showCalibration = true"
+            title="电机校准"
+            class="calibration-btn"
+          />
+          <el-button 
             :icon="isDarkMode ? Sunny : Moon"
             circle 
             @click="toggleTheme"
@@ -44,6 +51,20 @@
           @close="closeSettings"
           @save="saveConfiguration"
           @restart="restartSystem"
+        />
+      </el-dialog>
+
+      <!-- Calibration Dialog -->
+      <el-dialog
+        v-model="showCalibration"
+        title=""
+        width="90%"
+        :close-on-click-modal="false"
+        class="calibration-dialog"
+      >
+        <CalibrationPage 
+          :status="status"
+          @back="showCalibration = false"
         />
       </el-dialog>
 
@@ -83,6 +104,7 @@ import SettingsModal from '../components/SettingsModal.vue'
 import DesktopInterface from '../components/DesktopInterface.vue'
 import VrScene from './VrScene.vue'
 import VrEntrance from './VrEntrance.vue'
+import CalibrationPage from './Calibration.vue'
 
 // Composables
 const { config, saving, restarting, vrServerUrl, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
@@ -93,6 +115,7 @@ const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } =
 const isVRMode = ref(false)
 const showVrEntrance = ref(false)
 const settingsVisible = ref(false)
+const showCalibration = ref(false)
 const isDarkMode = ref(false)
 
 // Theme toggle
