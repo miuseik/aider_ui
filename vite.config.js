@@ -50,11 +50,16 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: `https://${getLocalIP()}:8442`,
+        target: 'https://api.houqicg.com',
         changeOrigin: true,
         secure: false
       }
     }
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 3000,
+    https: httpsConfig
   }
 })
 

@@ -16,7 +16,7 @@ class WebSocketClient {
       return `wss://ws.houqicg.com/ws`
     }
     const host = window.location.hostname
-    return `wss://${host}:8442/ws`
+    return `wss://ws.houqicg.com/ws`
   }
 
   connect() {
@@ -34,8 +34,8 @@ class WebSocketClient {
         this.isConnected = true
         this.reconnectAttempts = 0
         
-        // 发送身份认证
-        this.send({ type: 'client' })
+        // 发送身份认证（直接调用 ws.send）
+        this.ws.send(JSON.stringify({ type: 'client' }))
         console.log('已发送 UI 客户端身份认证')
         
         this.notifyHandlers({ type: 'connected' })

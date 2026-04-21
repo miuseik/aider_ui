@@ -5,6 +5,14 @@
       <div class="top-bar">
         <div class="brand">telegrip</div>
         <div class="controls">
+          <!-- 证书授权提示 -->
+          <div class="cert-auth-tip">
+            <span class="tip-text">首次使用需接受证书：</span>
+            <el-button size="small" type="primary" plain @click="openCertAuth('dev')">开发环境</el-button>
+            <el-button size="small" type="success" plain @click="openCertAuth('prod-api')">生产-API</el-button>
+            <el-button size="small" type="success" plain @click="openCertAuth('prod-ws')">生产-WS</el-button>
+          </div>
+          
           <el-button 
             :icon="isDarkMode ? Sunny : Moon"
             circle 
@@ -94,6 +102,16 @@ function toggleTheme() {
   localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
 }
 
+// 证书授权
+function openCertAuth(env) {
+  const urls = {
+    dev: 'https://172.19.129.184:8442',
+    'prod-api': 'https://api.houqicg.com',
+    'prod-ws': 'https://ws.houqicg.com'
+  }
+  window.open(urls[env], '_blank')
+}
+
 // Settings functions
 function openSettings() {
   settingsVisible.value = true
@@ -167,4 +185,20 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 /* 组件特定样式 */
+.cert-auth-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  padding: 6px 12px;
+  background: rgba(255, 193, 7, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  
+  .tip-text {
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+    white-space: nowrap;
+  }
+}
 </style>
