@@ -13,10 +13,10 @@ class WebSocketClient {
     // 生产环境使用固定域名,开发环境使用当前主机
     const isProd = import.meta.env.PROD
     if (isProd) {
-      return `wss://www.houqicg.com:8442`
+      return `wss://ws.houqicg.com/ws`
     }
     const host = window.location.hostname
-    return `wss://${host}:8442`
+    return `wss://${host}:8442/ws`
   }
 
   connect() {

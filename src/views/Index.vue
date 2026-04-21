@@ -165,6 +165,6 @@ onUnmounted(() => {
 })
 </script>
 
-<style lang="scss">
-@import '../styles/styles.scss';
+<style lang="scss" scoped>
+/* 组件特定样式 */
 </style>

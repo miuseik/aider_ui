@@ -17,7 +17,7 @@ function closeSettings() {
 }
 
 function loadConfiguration() {
-  fetch('/api/config')
+  fetch(getApiBaseUrl() + '/api/config')
     .then(response => response.json())
     .then(config => {
       currentConfig = config;
@@ -57,7 +57,7 @@ function restartSystem() {
   restartButton.disabled = true;
   restartButton.textContent = 'Restarting...';
 
-  fetch('/api/restart', {
+  fetch(getApiBaseUrl() + '/api/restart', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -124,7 +124,7 @@ function saveConfiguration() {
   saveButton.disabled = true;
   saveButton.textContent = 'Saving...';
 
-  fetch('/api/config', {
+  fetch(getApiBaseUrl() + '/api/config', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -149,9 +149,18 @@ function saveConfiguration() {
   });
 }
 
+// API 基础 URL
+const getApiBaseUrl = () => {
+  const isProd = import.meta.env.PROD
+  if (isProd) {
+    return 'https://api.houqicg.com'
+  }
+  return ''
+}
+
 // Update status indicators
 function updateStatus() {
-  fetch('/api/status')
+  fetch(getApiBaseUrl() + '/api/status')
     .then(response => response.json())
     .then(data => {
       // Update arm connection indicators (based on device files)
@@ -239,7 +248,7 @@ function showConnectionWarning() {
 function toggleRobotEngagement() {
   const action = isRobotEngaged ? 'disconnect' : 'connect';
 
-  fetch('/api/robot', {
+  fetch(getApiBaseUrl() + '/api/robot', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -265,7 +274,7 @@ function toggleRobotEngagement() {
 function toggleKeyboardControl() {
   const action = isKeyboardEnabled ? 'disable' : 'enable';
 
-  fetch('/api/keyboard', {
+  fetch(getApiBaseUrl() + '/api/keyboard', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -419,7 +428,7 @@ function sendKeyCommand(keyCode, action) {
   const key = keyMap[keyCode];
   if (!key) return;
 
-  fetch('/api/keypress', {
+  fetch(getApiBaseUrl() + '/api/keypress', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'

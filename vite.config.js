@@ -31,6 +31,18 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src')
+    }
+  },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler'
+      }
+    }
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
@@ -38,7 +50,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'https://www.houqicg.com:8443',
+        target: `https://${getLocalIP()}:8442`,
         changeOrigin: true,
         secure: false
       }
