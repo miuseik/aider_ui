@@ -5,7 +5,10 @@
         :status="status"
         :is-robot-engaged="isRobotEngaged"
         :show-warning="showWarning"
+        :simulation-mode="simulationMode"
         @toggle="$emit('toggle-robot')"
+        @toggle-simulation="$emit('toggle-simulation', $event)"
+        @refresh="$emit('refresh-status')"
       />
 
       <VrInstructions 
@@ -46,10 +49,14 @@ defineProps({
   isKeyboardEnabled: {
     type: Boolean,
     default: false
+  },
+  simulationMode: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['toggle-robot', 'toggle-keyboard', 'switch-vr'])
+defineEmits(['toggle-robot', 'toggle-keyboard', 'switch-vr', 'toggle-simulation', 'refresh-status'])
 </script>
 
 <style>

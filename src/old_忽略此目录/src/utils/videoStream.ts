@@ -21,7 +21,7 @@ class VideoStreamManager {
    */
   connect(): void {
     const serverHostname = window.location.hostname
-    const websocketUrl = `wss://${serverHostname}:${this.serverPort}/ws/controller/vr_controller_01`
+    const websocketUrl = `wss://${serverHostname}:${this.serverPort}/controller/vr_controller_01`
 
     try {
       this.ws = WebSocketManager.getInstance().getConnection(websocketUrl)

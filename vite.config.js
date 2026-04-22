@@ -29,37 +29,45 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
   }
 }
 
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src')
-    }
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        api: 'modern-compiler'
+export default defineConfig(({ mode }) => {
+  return {
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src')
       }
-    }
-  },
-  server: {
-    host: '0.0.0.0',
-    port: 3000,
-    https: httpsConfig,
-    open: true,
-    proxy: {
-      '/api': {
-        target: 'https://api.houqicg.com',
-        changeOrigin: true,
-        secure: false
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          api: 'modern-compiler'
+        }
       }
+    },
+    server: {
+      host: '0.0.0.0',
+      port: 3000,
+      https: httpsConfig,
+      open: true,
+      proxy: {
+        '/api': {
+          target: process.env.VITE_API_URL || 'https://localhost:8443',
+          changeOrigin: true,
+          secure: false
+        },
+        '/ws': {
+          target: process.env.VITE_WS_URL || 'wss://localhost:8442',
+          ws: true,
+          changeOrigin: true,
+          secure: false
+        }
+      }
+    },
+    preview: {
+      host: '0.0.0.0',
+      port: 3000,
+      https: httpsConfig
     }
-  },
-  preview: {
-    host: '0.0.0.0',
-    port: 3000,
-    https: httpsConfig
   }
 })
 

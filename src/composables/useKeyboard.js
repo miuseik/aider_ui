@@ -1,26 +1,33 @@
 import { ref } from 'vue'
 
-export function useKeyboard(isRobotEngaged, showConnectionWarning) {
+export function useKeyboard(isRobotEngaged, showConnectionWarning, simulationMode) {
   const isKeyboardEnabled = ref(false)
   const pressedKeys = new Set()
 
   const controlKeys = [
     'KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyE',
-    'KeyZ', 'KeyX', 'KeyR', 'KeyT', 'KeyF', 'Tab',
+    'KeyZ', 'KeyX', 'KeyR', 'KeyT', 'KeyC',
     'KeyI', 'KeyK', 'KeyJ', 'KeyL', 'KeyU', 'KeyO',
-    'KeyN', 'KeyM', 'KeyH', 'KeyY', 'Semicolon', 'Enter',
-    'Escape'
+    'KeyN', 'KeyM', 'KeyH', 'KeyY', 'Period',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Digit7', 'Digit9', 'KeyV', 'KeyB',
+    'Tab', 'Enter', 'Escape'
   ]
 
   const keyMap = {
     'KeyW': 'w', 'KeyS': 's', 'KeyA': 'a', 'KeyD': 'd',
     'KeyQ': 'q', 'KeyE': 'e',
     'KeyZ': 'z', 'KeyX': 'x', 'KeyR': 'r', 'KeyT': 't',
-    'KeyF': 'f', 'Tab': 'tab',
+    'KeyC': 'c',
     'KeyI': 'i', 'KeyK': 'k', 'KeyJ': 'j', 'KeyL': 'l',
     'KeyU': 'u', 'KeyO': 'o',
     'KeyN': 'n', 'KeyM': 'm', 'KeyH': 'h', 'KeyY': 'y',
-    'Semicolon': ';', 'Enter': 'enter',
+    'Period': '.',
+    'ArrowUp': 'arrowup', 'ArrowDown': 'arrowdown',
+    'ArrowLeft': 'arrowleft', 'ArrowRight': 'arrowright',
+    'Digit7': '7', 'Digit9': '9',
+    'KeyV': 'v', 'KeyB': 'b',
+    'Tab': 'tab', 'Enter': 'enter',
     'Escape': 'esc'
   }
 
@@ -70,7 +77,8 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning) {
       event.preventDefault()
     }
 
-    if (isControlKey(event.code) && !isRobotEngaged.value) {
+    // 仿真模式下不检查真机连接
+    if (!simulationMode.value && isControlKey(event.code) && !isRobotEngaged.value) {
       showConnectionWarning()
       return
     }

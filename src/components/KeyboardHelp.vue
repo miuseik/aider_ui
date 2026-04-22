@@ -42,12 +42,36 @@
               <span class="key-desc">腕部翻滚</span>
             </div>
             <div class="key-row">
-              <span><kbd class="key">F</kbd></span>
+              <span><kbd class="key">R</kbd> / <kbd class="key">T</kbd></span>
+              <span class="key-desc">腕部弯曲</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">C</kbd></span>
               <span class="key-desc">切换夹爪</span>
             </div>
           </div>
         </div>
-        
+        <div class="help-column">
+          <h4>底盘</h4>
+          <div class="key-group">
+            <div class="key-row">
+              <span><kbd class="key">↑</kbd> / <kbd class="key">↓</kbd></span>
+              <span class="key-desc">前进 / 后退</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">←</kbd> / <kbd class="key">→</kbd></span>
+              <span class="key-desc">左转 / 右转</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">7</kbd> / <kbd class="key">9</kbd></span>
+              <span class="key-desc">左平移 / 右平移</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">V</kbd> / <kbd class="key">B</kbd></span>
+              <span class="key-desc">升 / 降</span>
+            </div>
+          </div>
+        </div>
         <div class="help-column">
           <h4>右臂</h4>
           <div class="key-group">
@@ -64,15 +88,21 @@
               <span class="key-desc">上升 / 下降</span>
             </div>
             <div class="key-row">
-              <span><kbd class="key">N</kbd> / <kbd class="key">M</kbd></span>
+              <span><kbd class="key">H</kbd> / <kbd class="key">Y</kbd></span>
+              <span class="key-desc">腕部弯曲</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">M</kbd> / <kbd class="key">,</kbd></span>
               <span class="key-desc">腕部翻滚</span>
             </div>
             <div class="key-row">
-              <span><kbd class="key">;</kbd></span>
+              <span><kbd class="key">.</kbd></span>
               <span class="key-desc">切换夹爪</span>
             </div>
           </div>
         </div>
+        
+
       </div>
       
       <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #bdc3c7; color: #7f8c8d; font-size: 13px;">
@@ -94,6 +124,14 @@ defineProps({
 defineEmits(['toggle'])
 </script>
 
-<style>
-/* 样式从全局 styles.css 继承 */
+<style scoped>
+.help-columns {
+  display: flex;
+  gap: 20px;
+}
+
+.help-column {
+  flex: 1;
+  min-width: 0;
+}
 </style>

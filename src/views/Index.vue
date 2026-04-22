@@ -6,11 +6,10 @@
         <div class="brand">telegrip</div>
         <div class="controls">
           <!-- 证书授权提示 -->
-          <div class="cert-auth-tip">
+          <div class="cert-auth-tip" v-if="showCertTip">
             <span class="tip-text">首次使用需接受证书：</span>
-            <el-button size="small" type="primary" plain @click="openCertAuth('dev')">开发环境</el-button>
-            <el-button size="small" type="success" plain @click="openCertAuth('prod-api')">生产-API</el-button>
-            <el-button size="small" type="success" plain @click="openCertAuth('prod-ws')">生产-WS</el-button>
+            <el-button size="small" type="primary" plain @click="openCertAuth(apiUrl)">API</el-button>
+            <el-button size="small" type="success" plain @click="openCertAuth(wsUrl)">WS</el-button>
           </div>
           
           <el-button 
@@ -76,9 +75,12 @@
           :show-warning="showWarning"
           :vr-server-url="vrServerUrl"
           :is-keyboard-enabled="isKeyboardEnabled"
+          :simulation-mode="simulationMode"
           @toggle-robot="toggleRobotEngagement"
           @toggle-keyboard="toggleKeyboardControl"
           @switch-vr="switchToVrView"
+          @toggle-simulation="simulationMode = $event"
+          @refresh-status="updateStatus"
         />
       </div>
 
@@ -106,17 +108,23 @@ import VrScene from './VrScene.vue'
 import VrEntrance from './VrEntrance.vue'
 import CalibrationPage from './Calibration.vue'
 
-// Composables
-const { config, saving, restarting, vrServerUrl, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
-const { isRobotEngaged, showWarning, status, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
-const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
-
 // State
 const isVRMode = ref(false)
 const showVrEntrance = ref(false)
 const settingsVisible = ref(false)
 const showCalibration = ref(false)
 const isDarkMode = ref(false)
+const simulationMode = ref(false)
+
+// 环境变量
+const apiUrl = import.meta.env.VITE_API_URL || 'https://localhost:8443'
+const wsUrl = import.meta.env.VITE_WS_URL ? import.meta.env.VITE_WS_URL.replace('wss://', 'https://').replace('/ws', '') : 'https://localhost:8442'
+const showCertTip = apiUrl.includes('localhost') || wsUrl.includes('localhost')
+
+// Composables
+const { config, saving, restarting, vrServerUrl, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
+const { isRobotEngaged, showWarning, status, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
+const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning, simulationMode)
 
 // Theme toggle
 function toggleTheme() {
@@ -126,13 +134,8 @@ function toggleTheme() {
 }
 
 // 证书授权
-function openCertAuth(env) {
-  const urls = {
-    dev: 'https://172.19.129.184:8442',
-    'prod-api': 'https://api.houqicg.com',
-    'prod-ws': 'https://ws.houqicg.com'
-  }
-  window.open(urls[env], '_blank')
+function openCertAuth(url) {
+  window.open(url, '_blank')
 }
 
 // Settings functions
@@ -156,7 +159,6 @@ function handleVrEntered() {
 }
 
 // Lifecycle
-let statusInterval = null
 let wsUnsubscribe = null
 
 onMounted(() => {
@@ -167,9 +169,8 @@ onMounted(() => {
     document.documentElement.setAttribute('data-theme', 'dark')
   }
   
-  // Start status monitoring
+  // 初始查询一次状态
   updateStatus()
-  statusInterval = setInterval(updateStatus, 2000)
   
   // Connect WebSocket
   wsClient.connect()
@@ -191,10 +192,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (statusInterval) {
-    clearInterval(statusInterval)
-  }
-  
   // Disconnect WebSocket
   if (wsUnsubscribe) {
     wsUnsubscribe()

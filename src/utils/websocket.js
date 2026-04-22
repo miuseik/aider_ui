@@ -10,13 +10,8 @@ class WebSocketClient {
   }
 
   getDefaultUrl() {
-    // 生产环境使用固定域名,开发环境使用当前主机
-    const isProd = import.meta.env.PROD
-    if (isProd) {
-      return `wss://ws.houqicg.com/ws`
-    }
-    const host = window.location.hostname
-    return `wss://ws.houqicg.com/ws`
+    // 使用环境变量配置的 WebSocket URL
+    return import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
   }
 
   connect() {

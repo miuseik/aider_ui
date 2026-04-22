@@ -151,11 +151,7 @@ function saveConfiguration() {
 
 // API 基础 URL
 const getApiBaseUrl = () => {
-  const isProd = import.meta.env.PROD
-  if (isProd) {
-    return 'https://api.houqicg.com'
-  }
-  return ''
+  return import.meta.env.VITE_API_URL || ''
 }
 
 // Update status indicators
