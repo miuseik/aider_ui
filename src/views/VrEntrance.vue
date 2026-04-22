@@ -1,27 +1,41 @@
 <template>
   <div class="vr-ui-container">
-
-
-    <!-- 视频流显示 -->
-    <div v-if="videoFrame" class="video-overlay">
-      <img :src="`data:image/jpeg;base64,${videoFrame}`" class="video-frame" />
-      <div class="video-label">实时视频</div>
+    <!-- 多机器人视频网格 -->
+    <div class="robot-grid">
+      <div 
+        v-for="robot in robotList" 
+        :key="robot.id"
+        class="robot-card"
+        :class="{ selected: selectedRobotId === robot.id }"
+      >
+        <div class="video-container" @click="selectRobot(robot)">
+          <img 
+            v-if="robot.videoFrame" 
+            :src="getImageSrc(robot.videoFrame)" 
+            class="robot-video"
+          />
+          <div v-else class="video-placeholder">
+            <div class="placeholder-text">{{ robot.name }}</div>
+          </div>
+          <div class="robot-label">{{ robot.name }}</div>
+          <div class="status-indicator" :class="{ online: robot.online }"></div>
+        </div>
+        
+        <!-- 每个机器人的进入按钮 -->
+        <button 
+          class="enter-vr-btn"
+          :disabled="isConnecting || !robot.online"
+          @click="handleStartTracking(robot)"
+        >
+          {{ isConnecting && selectedRobotId === robot.id ? '连接中...' : '进入 VR' }}
+        </button>
+      </div>
     </div>
-
-    <!-- 开始跟踪按钮 -->
-    <button 
-      id="start-tracking-button"
-      class="start-button"
-      :disabled="isConnecting"
-      @click="handleStartTracking"
-    >
-      {{ buttonText }}
-    </button>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import VideoStreamManager from '../utils/videoStream.js'
 
@@ -30,19 +44,53 @@ const emit = defineEmits(['vr-entered'])
 
 const isVRMode = ref(false)
 const isConnecting = ref(false)
+const selectedRobotId = ref(null)
 
-// 视频流
-const videoFrame = ref('')
+// 模拟多机器人列表（后期从 API 获取）
+const robotList = ref([
+  { id: 'robot_01', name: 'Aloha Mini #1', online: true, videoFrame: '' },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false, videoFrame: '' },
+  { id: 'robot_03', name: 'SO100 #1', online: false, videoFrame: '' }
+])
+
+// 视频流管理器实例（用于接收所有机器人的视频）
 let videoStream = null
 
 // 按钮文本
 const buttonText = computed(() => {
   if (isConnecting.value) return '连接中...'
+  if (!selectedRobotId.value) return '请选择机器人'
   return '开始控制器跟踪'
 })
 
+// 选择机器人
+function selectRobot(robot) {
+  selectedRobotId.value = robot.id
+}
+
+// 获取图片 src
+function getImageSrc(frameData) {
+  return `data:image/jpeg;base64,${frameData}`
+}
+
+// 更新机器人视频帧（供全局使用）
+async function updateRobotVideoFrame(frameData) {
+  // 目前只有一个机器人，直接更新第一个在线的机器人
+  const onlineRobot = robotList.value.find(r => r.online)
+  if (onlineRobot) {
+    onlineRobot.videoFrame = frameData
+    // 强制触发响应式更新
+    await nextTick()
+  }
+}
+
 // 处理开始跟踪
-async function handleStartTracking() {
+async function handleStartTracking(robot) {
+  if (!robot || !robot.id) return
+  
+  // 先选择该机器人
+  selectedRobotId.value = robot.id
+  
   isConnecting.value = true
   
   try {
@@ -92,23 +140,24 @@ function setupVREventListeners() {
 onMounted(() => {
   setupVREventListeners()
   
-  // 初始化视频流
+  // 初始化视频流监听（复用全局 WebSocket）
   videoStream = new VideoStreamManager()
   videoStream.onFrameUpdate = (frame) => {
-    videoFrame.value = frame
+    updateRobotVideoFrame(frame)
   }
   videoStream.connect()
 })
 
 onUnmounted(() => {
-  // 清理视频流
+  // 断开视频流监听（不断开 WebSocket 连接）
   if (videoStream) {
     videoStream.disconnect()
+    videoStream = null
   }
 })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .vr-ui-container {
   position: fixed;
   top: 0;
@@ -117,57 +166,132 @@ onUnmounted(() => {
   height: 100vh;
   pointer-events: none;
   z-index: 9998;
-}
-
-.instructions-content {
-  display: flex;
-  gap: 15px;
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.image-section {
-  flex: 1;
-  min-width: 150px;
-  text-align: center;
-}
-
-.image-section img {
-  max-width: 100%;
-  height: auto;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
-
-.text-section {
-  flex: 1;
-  min-width: 200px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
 }
 
-.instruction-item {
-  padding: 8px;
-  background: rgba(255,255,255,0.1);
+/* 机器人网格布局 */
+.robot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  width: 100%;
+  max-width: 1400px;
+  margin-bottom: 40px;
+  pointer-events: auto;
+}
+
+.robot-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+
+  &:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(0, 255, 136, 0.3);
+  }
+
+  &.selected {
+    border-color: #00ff88;
+    box-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+  }
+}
+
+.video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: #000;
+}
+
+.robot-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%);
+}
+
+.placeholder-text {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.robot-label {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 4px 12px;
   border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
 }
 
-.grip-text {
-  color: #ee4d9a;
+.status-indicator {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff4444;
+  box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+
+  &.online {
+    background: #00ff88;
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+  }
 }
 
-.trigger-text {
-  color: #9af58c;
+/* 进入VR按钮 */
+.enter-vr-btn {
+  width: 100%;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  pointer-events: auto;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, #00cc6a 0%, #00994f 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 255, 136, 0.4);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    background: linear-gradient(135deg, #666 0%, #444 100%);
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 }
 
 .start-button {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 20px 40px;
+  padding: 20px 60px;
   font-size: 20px;
   font-weight: bold;
   background-color: #4CAF50;
@@ -177,37 +301,18 @@ onUnmounted(() => {
   cursor: pointer;
   pointer-events: auto;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-}
+  transition: all 0.3s ease;
 
-.start-button:disabled {
-  background-color: #666;
-  cursor: not-allowed;
-}
+  &:hover:not(:disabled) {
+    background-color: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+  }
 
-.video-overlay {
-  width: 320px;
-  height: 240px;
-  border: 3px solid #0f0;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.8);
-  box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
-}
-
-.video-frame {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.video-label {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #0f0;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: bold;
+  &:disabled {
+    background-color: #666;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
 }
 </style>

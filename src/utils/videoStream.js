@@ -33,7 +33,16 @@ class VideoStreamManager {
             if (!this.displayImage) {
               this.displayImage = new Image()
             }
-            this.displayImage.src = `data:image/jpeg;base64,${robotData.frame}`
+            const imageUrl = `data:image/jpeg;base64,${robotData.frame}`
+            this.displayImage.src = imageUrl
+            
+            // 监听图片加载
+            this.displayImage.onload = () => {
+              console.log('[DEBUG] 图片加载成功，尺寸:', this.displayImage.width, 'x', this.displayImage.height)
+            }
+            this.displayImage.onerror = (e) => {
+              console.error('[DEBUG] 图片加载失败:', e)
+            }
             
             if (this.onFrameUpdate) {
               this.onFrameUpdate(robotData.frame)
