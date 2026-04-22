@@ -6,7 +6,7 @@
         <div class="brand">telegrip</div>
         <div class="controls">
           <!-- 证书授权提示 -->
-          <div class="cert-auth-tip" v-if="showCertTip">
+          <div class="cert-auth-tip" >
             <span class="tip-text">首次使用需接受证书：</span>
             <el-button size="small" type="primary" plain @click="openCertAuth(apiUrl)">API</el-button>
             <el-button size="small" type="success" plain @click="openCertAuth(wsUrl)">WS</el-button>
@@ -68,7 +68,7 @@
       </el-dialog>
 
       <!-- Main Content - Single Screen Layout -->
-      <div class="main-container" v-show="!isVRMode && !showVrEntrance">
+      <div class="main-container" v-show="!isVRMode">
         <DesktopInterface 
           :status="status"
           :is-robot-engaged="isRobotEngaged"
@@ -84,9 +84,6 @@
         />
       </div>
 
-      <!-- VR Entrance UI -->
-      <VrEntrance v-if="showVrEntrance && !isVRMode" @vr-entered="handleVrEntered" />
-
       <!-- VR Scene -->
       <VrScene v-if="isVRMode" />
     </div>
@@ -95,31 +92,30 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { Sunny, Moon } from '@element-plus/icons-vue'
-import { wsClient } from '../utils/websocket'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
 import SettingsModal from '../components/SettingsModal.vue'
 import DesktopInterface from '../components/DesktopInterface.vue'
-import VrScene from './VrScene.vue'
-import VrEntrance from './VrEntrance.vue'
 import CalibrationPage from './Calibration.vue'
 
 // State
 const isVRMode = ref(false)
-const showVrEntrance = ref(false)
 const settingsVisible = ref(false)
 const showCalibration = ref(false)
 const isDarkMode = ref(false)
 const simulationMode = ref(false)
 
+// Router
+const router = useRouter()
+
 // 环境变量
 const apiUrl = import.meta.env.VITE_API_URL || 'https://localhost:8443'
 const wsUrl = import.meta.env.VITE_WS_URL ? import.meta.env.VITE_WS_URL.replace('wss://', 'https://').replace('/ws', '') : 'https://localhost:8442'
-const showCertTip = apiUrl.includes('localhost') || wsUrl.includes('localhost')
 
 // Composables
 const { config, saving, restarting, vrServerUrl, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
@@ -150,16 +146,10 @@ function closeSettings() {
 
 // VR mode toggle
 function switchToVrView() {
-  showVrEntrance.value = true
-}
-
-function handleVrEntered() {
-  isVRMode.value = true
-  showVrEntrance.value = false
+  router.push('/vr-entrance')
 }
 
 // Lifecycle
-let wsUnsubscribe = null
 
 onMounted(() => {
   // Load theme preference
@@ -172,19 +162,24 @@ onMounted(() => {
   // 初始查询一次状态
   updateStatus()
   
-  // Connect WebSocket
-  wsClient.connect()
-  
-  // 立即设置初始状态
-  status.wsConnected = wsClient.isConnected
-  
-  wsUnsubscribe = wsClient.onMessage((data) => {
-    if (data.type === 'connected') {
-      status.wsConnected = true
-    } else if (data.type === 'disconnected' || data.type === 'error') {
-      status.wsConnected = false
-    }
-  })
+  // 同步全局 WebSocket 状态
+  if (window.__globalStatus) {
+    status.wsConnected = window.__globalStatus.wsConnected
+    // 监听变化
+    const observer = new MutationObserver(() => {
+      status.wsConnected = window.__globalStatus.wsConnected
+    })
+    // 简单轮询检查（Vue3 reactive 不会触发MutationObserver）
+    const checkInterval = setInterval(() => {
+      if (window.__globalStatus) {
+        status.wsConnected = window.__globalStatus.wsConnected
+      }
+    }, 500)
+    
+    onUnmounted(() => {
+      clearInterval(checkInterval)
+    })
+  }
   
   // Keyboard listeners
   document.addEventListener('keydown', handleKeyDown, { capture: true })
@@ -192,12 +187,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // Disconnect WebSocket
-  if (wsUnsubscribe) {
-    wsUnsubscribe()
-  }
-  wsClient.disconnect()
-  
   document.removeEventListener('keydown', handleKeyDown, { capture: true })
   document.removeEventListener('keyup', handleKeyUp, { capture: true })
 })

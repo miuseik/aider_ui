@@ -7,11 +7,19 @@ class WebSocketClient {
     this.reconnectAttempts = 0
     this.messageHandlers = []
     this.isConnected = false
+    this.clientType = 'client' // 默认客户端类型
   }
 
   getDefaultUrl() {
     // 使用环境变量配置的 WebSocket URL
     return import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
+  }
+
+  /**
+   * 设置客户端类型（用于身份认证）
+   */
+  setClientType(type) {
+    this.clientType = type
   }
 
   connect() {
@@ -29,9 +37,9 @@ class WebSocketClient {
         this.isConnected = true
         this.reconnectAttempts = 0
         
-        // 发送身份认证（直接调用 ws.send）
-        this.ws.send(JSON.stringify({ type: 'client' }))
-        console.log('已发送 UI 客户端身份认证')
+        // 发送身份认证
+        this.ws.send(JSON.stringify({ type: this.clientType }))
+        console.log(`已发送 ${this.clientType} 身份认证`)
         
         this.notifyHandlers({ type: 'connected' })
       }
@@ -75,7 +83,7 @@ class WebSocketClient {
 
   send(data) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data))
+      this.ws.send(typeof data === 'string' ? data : JSON.stringify(data))
       return true
     } else {
       console.warn('WebSocket 未连接,无法发送消息')

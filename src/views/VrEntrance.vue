@@ -1,21 +1,11 @@
 <template>
   <div class="vr-ui-container">
-    <!-- VR 说明面板 -->
-    <div  id="vr-instructions-panel" class="instructions-panel">
-      <h2>VR 控制器使用说明</h2>
-      <div class="instructions-content">
-        <div class="image-section">
-          <img src="/media/telegrip_instructions.jpg" alt="VR 控制器使用说明">
-        </div>
-        <div class="text-section">
-          <div class="instruction-item">
-            <strong class="grip-text">握把按钮：</strong>按住以移动机械臂
-          </div>
-          <div class="instruction-item">
-            <strong class="trigger-text">扳机：</strong>按住以闭合夹爪
-          </div>
-        </div>
-      </div>
+
+
+    <!-- 视频流显示 -->
+    <div v-if="videoFrame" class="video-overlay">
+      <img :src="`data:image/jpeg;base64,${videoFrame}`" class="video-frame" />
+      <div class="video-label">实时视频</div>
     </div>
 
     <!-- 开始跟踪按钮 -->
@@ -32,11 +22,18 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import VideoStreamManager from '../utils/videoStream.js'
 
+const router = useRouter()
 const emit = defineEmits(['vr-entered'])
 
 const isVRMode = ref(false)
 const isConnecting = ref(false)
+
+// 视频流
+const videoFrame = ref('')
+let videoStream = null
 
 // 按钮文本
 const buttonText = computed(() => {
@@ -46,18 +43,6 @@ const buttonText = computed(() => {
 
 // 处理开始跟踪
 async function handleStartTracking() {
-  // 先通知父组件显示 VrScene
-  emit('vr-entered')
-  
-  // 等待 VrScene 挂载和 a-scene 初始化
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  
-  const sceneEl = document.querySelector('a-scene')
-  if (!sceneEl) {
-    alert('VR 场景不可用，请刷新页面')
-    return
-  }
-  
   isConnecting.value = true
   
   try {
@@ -80,8 +65,8 @@ async function handleStartTracking() {
       await new Promise(resolve => setTimeout(resolve, 500))
     }
     
-    // 进入 VR
-    await sceneEl.enterVR(true)
+    // 直接跳转到 VrScene 页面
+    router.push('/vr-scene')
   } catch (err) {
     alert(`启动失败: ${err.message}`)
   } finally {
@@ -106,10 +91,20 @@ function setupVREventListeners() {
 
 onMounted(() => {
   setupVREventListeners()
+  
+  // 初始化视频流
+  videoStream = new VideoStreamManager()
+  videoStream.onFrameUpdate = (frame) => {
+    videoFrame.value = frame
+  }
+  videoStream.connect()
 })
 
 onUnmounted(() => {
-  // 清理
+  // 清理视频流
+  if (videoStream) {
+    videoStream.disconnect()
+  }
 })
 </script>
 
@@ -122,28 +117,6 @@ onUnmounted(() => {
   height: 100vh;
   pointer-events: none;
   z-index: 9998;
-}
-
-.instructions-panel {
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 90%;
-  width: 600px;
-  background: rgba(15, 52, 96, 0.95);
-  border-radius: 12px;
-  padding: 20px;
-  color: white;
-  pointer-events: auto;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.1);
-}
-
-.instructions-panel h2 {
-  margin: 0 0 15px 0;
-  font-size: 1.2em;
-  text-align: center;
 }
 
 .instructions-content {
@@ -209,5 +182,32 @@ onUnmounted(() => {
 .start-button:disabled {
   background-color: #666;
   cursor: not-allowed;
+}
+
+.video-overlay {
+  width: 320px;
+  height: 240px;
+  border: 3px solid #0f0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+}
+
+.video-frame {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.video-label {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #0f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
 }
 </style>

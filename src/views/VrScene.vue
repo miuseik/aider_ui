@@ -33,6 +33,11 @@
       <!-- 数据中心面板（作为 3D 对象添加到场景中） -->
       <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
     </a-scene>
+    
+    <!-- 视频流显示 -->
+    <div v-if="videoFrame" class="video-overlay">
+      <img :src="`data:image/jpeg;base64,${videoFrame}`" class="video-frame" />
+    </div>
   </div>
 </template>
 
@@ -42,6 +47,8 @@ import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
+import VideoStreamManager from '../utils/videoStream.js'
+import controllerManager from '../utils/controllerManager.js'
 
 const sceneRef = ref(null)
 let dataPanelMesh = null
@@ -49,8 +56,7 @@ let dataPanelContext = null
 let dataPanelTexture = null
 let animationId = null
 
-// WebSocket 和手柄状态
-let websocket = null
+// 手柄状态
 let leftGripDown = false
 let rightGripDown = false
 let leftTriggerDown = false
@@ -68,6 +74,10 @@ let rightGripInitialQuaternion = null
 let leftZAxisRotation = 0
 let rightZAxisRotation = 0
 
+// 视频流
+const videoFrame = ref('')
+let videoStream = null
+
 onMounted(() => {
   console.log('进入了沉浸模式')
 
@@ -76,6 +86,13 @@ onMounted(() => {
     initControllerUpdater()
     initDataPanel()
     setupRendererAnimationLoop()
+    
+    // 初始化视频流
+    videoStream = new VideoStreamManager()
+    videoStream.onFrameUpdate = (frame) => {
+      videoFrame.value = frame
+    }
+    videoStream.connect()
   }, 500)
 })
 
@@ -83,6 +100,11 @@ onUnmounted(() => {
   const sceneEl = document.querySelector('a-scene')
   if (sceneEl && sceneEl.renderer) {
     sceneEl.renderer.setAnimationLoop(null)
+  }
+  
+  // 清理视频流
+  if (videoStream) {
+    videoStream.disconnect()
   }
   
   // 清理事件监听器
@@ -126,14 +148,14 @@ function calculateZAxisRotation(currentQuaternion, initialQuaternion) {
 }
 
 function sendGripRelease(hand) {
-  if (websocket && websocket.isConnected) {
-    websocket.send(JSON.stringify({ hand, gripReleased: true }))
+  if (wsClient.isConnected) {
+    wsClient.send(JSON.stringify({ hand, gripReleased: true }))
   }
 }
 
 function sendTriggerRelease(hand) {
-  if (websocket && websocket.isConnected) {
-    websocket.send(JSON.stringify({ hand, triggerReleased: true }))
+  if (wsClient.isConnected) {
+    wsClient.send(JSON.stringify({ hand, triggerReleased: true }))
   }
 }
 
@@ -226,19 +248,13 @@ function initControllerUpdater() {
   createAxisIndicators(leftHand, '左')
   createAxisIndicators(rightHand, '右')
   
-  // 设置 WebSocket
-  websocket = wsClient
-  if (!websocket.isConnected) {
-    websocket.connect()
-  }
-  
   // 设置事件监听器
   setupEventListeners(leftHand, rightHand)
 }
 
 // 发送 VR 数据到后端
 function sendVRData(vrData) {
-  if (!(leftGripDown || rightGripDown) || !websocket || !websocket.isConnected || !vrData) {
+  if (!(leftGripDown || rightGripDown) || !wsClient.isConnected || !vrData) {
     return
   }
   
@@ -284,7 +300,7 @@ function sendVRData(vrData) {
     }
   }
   
-  websocket.send(JSON.stringify(dualControllerData))
+  wsClient.send(JSON.stringify(dualControllerData))
 }
 
 // 重启系统
@@ -465,7 +481,7 @@ function updateDataPanelInFrame(time, frame, referenceSpace, session) {
   
   // 发送数据到后端
   sendVRData(vrData)
-  
+
   // 显示头显数据
   let headsetPos = 'N/A'
   let headsetRot = 'N/A'
@@ -588,5 +604,24 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   left: 0;
   overflow: hidden;
   z-index: 10;
+}
+
+.video-overlay {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  height: 240px;
+  border: 2px solid rgba(0, 255, 0, 0.8);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.video-frame {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 </style>
