@@ -32,12 +32,10 @@
       
       <!-- 数据中心面板（作为 3D 对象添加到场景中） -->
       <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
+      
+      <!-- 视频屏幕（3D 对象） -->
+      <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
     </a-scene>
-    
-    <!-- 视频流显示 -->
-    <div v-if="videoFrame" class="video-overlay">
-      <img :src="`data:image/jpeg;base64,${videoFrame}`" class="video-frame" />
-    </div>
   </div>
 </template>
 
@@ -55,6 +53,12 @@ let dataPanelMesh = null
 let dataPanelContext = null
 let dataPanelTexture = null
 let animationId = null
+
+// 视频屏幕相关
+let videoScreenMesh = null
+let videoCanvas = null
+let videoContext = null
+let videoTexture = null
 
 // 手柄状态
 let leftGripDown = false
@@ -75,7 +79,6 @@ let leftZAxisRotation = 0
 let rightZAxisRotation = 0
 
 // 视频流
-const videoFrame = ref('')
 let videoStream = null
 
 onMounted(() => {
@@ -85,13 +88,11 @@ onMounted(() => {
   setTimeout(() => {
     initControllerUpdater()
     initDataPanel()
+    initVideoScreen()  // 初始化视频屏幕
     setupRendererAnimationLoop()
     
     // 初始化视频流
     videoStream = new VideoStreamManager()
-    videoStream.onFrameUpdate = (frame) => {
-      videoFrame.value = frame
-    }
     videoStream.connect()
   }, 500)
 })
@@ -354,6 +355,35 @@ function initDataPanel() {
   dataPanelEntity.object3D.add(dataPanelMesh)
 }
 
+// 初始化视频屏幕（创建 3D 对象）
+function initVideoScreen() {
+  const videoScreenEntity = document.querySelector('#videoScreen')
+  if (!videoScreenEntity) return
+  
+  // 创建 canvas
+  videoCanvas = document.createElement('canvas')
+  videoCanvas.width = 1280
+  videoCanvas.height = 720
+  
+  videoContext = videoCanvas.getContext('2d')
+  
+  // 创建纹理
+  videoTexture = new THREE.CanvasTexture(videoCanvas)
+  videoTexture.minFilter = THREE.LinearFilter
+  videoTexture.magFilter = THREE.LinearFilter
+  
+  // 创建几何体和材质
+  const geometry = new THREE.PlaneGeometry(1.6, 0.9)  // 16:9 比例
+  const material = new THREE.MeshBasicMaterial({
+    map: videoTexture,
+    side: THREE.DoubleSide
+  })
+  
+  // 创建网格并添加到实体
+  videoScreenMesh = new THREE.Mesh(geometry, material)
+  videoScreenEntity.object3D.add(videoScreenMesh)
+}
+
 // 设置 renderer 的 animation loop
 function setupRendererAnimationLoop() {
   const sceneEl = document.querySelector('a-scene')
@@ -377,6 +407,7 @@ function setupRendererAnimationLoop() {
               updateRelativeRotation()
               
               updateDataPanelInFrame(0, frame, referenceSpace, session)
+              updateVideoScreenInFrame()  // 更新视频屏幕
             }
           }
         }
@@ -593,6 +624,29 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   }
   ctx.shadowBlur = 0
 }
+
+// 在 WebXR frame 中更新视频屏幕
+function updateVideoScreenInFrame() {
+  if (!videoContext || !videoTexture) return
+  
+  // 获取最新的视频帧
+  const frameImage = videoStream ? videoStream.getLatestFrameImage() : null
+  
+  if (frameImage && frameImage.complete && frameImage.naturalWidth > 0) {
+    try {
+      // 清空画布
+      videoContext.clearRect(0, 0, videoCanvas.width, videoCanvas.height)
+      
+      // 绘制视频帧（铺满整个屏幕）
+      videoContext.drawImage(frameImage, 0, 0, videoCanvas.width, videoCanvas.height)
+      
+      // 标记纹理需要更新
+      videoTexture.needsUpdate = true
+    } catch (e) {
+      // 静默失败
+    }
+  }
+}
 </script>
 
 <style scoped>
@@ -604,24 +658,5 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   left: 0;
   overflow: hidden;
   z-index: 10;
-}
-
-.video-overlay {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 320px;
-  height: 240px;
-  border: 2px solid rgba(0, 255, 0, 0.8);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 100;
-  overflow: hidden;
-}
-
-.video-frame {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 </style>
