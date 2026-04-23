@@ -47,7 +47,6 @@ import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
-import VideoStreamManager from '../utils/videoStream.js'
 import controllerManager from '../utils/controllerManager.js'
 import Layout from '../components/Layout.vue'
 
@@ -59,9 +58,7 @@ let animationId = null
 
 // 视频屏幕相关
 let videoScreenMesh = null
-let videoCanvas = null
-let videoContext = null
-let videoTexture = null
+let videoElement = null
 
 // 手柄状态
 let leftGripDown = false
@@ -81,8 +78,9 @@ let rightGripInitialQuaternion = null
 let leftZAxisRotation = 0
 let rightZAxisRotation = 0
 
-// 视频流
-let videoStream = null
+// WebRTC 相关
+let pc = null
+let ws = null
 
 onMounted(() => {
   console.log('进入了沉浸模式')
@@ -94,9 +92,8 @@ onMounted(() => {
     initVideoScreen()  // 初始化视频屏幕
     setupRendererAnimationLoop()
     
-    // 初始化视频流
-    videoStream = new VideoStreamManager()
-    videoStream.connect()
+    // 初始化 WebRTC 视频接收
+    initWebRTC()
   }, 500)
 })
 
@@ -106,14 +103,91 @@ onUnmounted(() => {
     sceneEl.renderer.setAnimationLoop(null)
   }
   
-  // 清理视频流
-  if (videoStream) {
-    videoStream.disconnect()
+  // 清理 WebRTC 连接
+  if (pc) {
+    pc.close()
+    pc = null
+  }
+  if (ws) {
+    ws.close()
+    ws = null
   }
   
   // 清理事件监听器
   cleanupEventListeners()
 })
+
+// 初始化 WebRTC 连接
+function initWebRTC() {
+  const SERVER_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
+  
+  // 创建 WebSocket 连接
+  ws = new WebSocket(SERVER_URL)
+  
+  ws.onopen = async () => {
+    console.log('WebSocket connected')
+    
+    // 发送初始化消息
+    ws.send(JSON.stringify({ type: 'client' }))
+    
+    // 创建 RTCPeerConnection
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.miwifi.com:3478' },
+        { urls: 'stun:stun.qq.com:3478' }
+      ]
+    })
+    
+    // 处理远程视频流
+    pc.ontrack = (event) => {
+      const video = document.getElementById('video-screen-video')
+      if (video) {
+        video.srcObject = event.streams[0]
+        console.log('视频连接成功')
+      }
+    }
+    
+    // 处理 ICE 候选
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        ws.send(JSON.stringify({
+          type: 'candidate',
+          candidate: event.candidate
+        }))
+      }
+    }
+    
+    // 监听信令消息
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data)
+      
+      if (data.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(data))
+        
+        // 创建 answer
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        
+        // 发送 answer
+        ws.send(JSON.stringify({
+          type: 'answer',
+          sdp: pc.localDescription.sdp
+        }))
+      } else if (data.type === 'candidate') {
+        // ICE 候选由浏览器自动处理
+        console.log('Received candidate')
+      }
+    }
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error)
+    }
+    
+    ws.onclose = () => {
+      console.log('WebSocket closed')
+    }
+  }
+}
 
 // 初始化工具函数
 function calculateRelativeRotation(currentRotation, initialRotation) {
@@ -363,15 +437,16 @@ function initVideoScreen() {
   const videoScreenEntity = document.querySelector('#videoScreen')
   if (!videoScreenEntity) return
   
-  // 创建 canvas
-  videoCanvas = document.createElement('canvas')
-  videoCanvas.width = 640
-  videoCanvas.height = 480
+  // 创建 video 元素
+  videoElement = document.createElement('video')
+  videoElement.id = 'video-screen-video'
+  videoElement.autoplay = true
+  videoElement.playsInline = true
+  videoElement.style.display = 'none'  // 隐藏 DOM 中的 video
+  document.body.appendChild(videoElement)
   
-  videoContext = videoCanvas.getContext('2d')
-  
-  // 创建纹理
-  videoTexture = new THREE.CanvasTexture(videoCanvas)
+  // 创建纹理（使用 video 作为源）
+  const videoTexture = new THREE.VideoTexture(videoElement)
   videoTexture.minFilter = THREE.LinearFilter
   videoTexture.magFilter = THREE.LinearFilter
   
@@ -629,26 +704,9 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
 }
 
 // 在 WebXR frame 中更新视频屏幕
+// WebRTC 视频直接通过 video 标签显示，无需手动更新
 function updateVideoScreenInFrame() {
-  if (!videoContext || !videoTexture) return
-  
-  // 获取最新的视频帧
-  const frameImage = videoStream ? videoStream.getLatestFrameImage() : null
-  
-  if (frameImage && frameImage.complete && frameImage.naturalWidth > 0) {
-    try {
-      // 清空画布
-      videoContext.clearRect(0, 0, videoCanvas.width, videoCanvas.height)
-      
-      // 绘制视频帧（铺满整个屏幕）
-      videoContext.drawImage(frameImage, 0, 0, videoCanvas.width, videoCanvas.height)
-      
-      // 标记纹理需要更新
-      videoTexture.needsUpdate = true
-    } catch (e) {
-      // 静默失败
-    }
-  }
+  // WebRTC 自动处理视频流，此函数保留为空
 }
 </script>
 

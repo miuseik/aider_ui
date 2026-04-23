@@ -45,6 +45,7 @@ class WebSocketClient {
       }
 
       this.ws.onmessage = (event) => {
+        // 处理文本消息
         try {
           const data = JSON.parse(event.data)
           this.notifyHandlers(data)

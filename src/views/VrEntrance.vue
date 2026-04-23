@@ -1,4 +1,4 @@
-<template>
+ <template>
   <Layout>
     <div class="vr-ui-container">
       <!-- 多机器人视频网格 -->
@@ -10,14 +10,12 @@
           :class="{ selected: selectedRobotId === robot.id }"
         >
           <div class="video-container" @click="selectRobot(robot)">
-            <img 
-              v-if="robot.videoFrame" 
-              :src="getImageSrc(robot.videoFrame)" 
+            <video 
+              :id="`robot-video-${robot.id.split('_')[1]}`"
+              autoplay 
+              playsinline
               class="robot-video"
             />
-            <div v-else class="video-placeholder">
-              <div class="placeholder-text">{{ robot.name }}</div>
-            </div>
             <div class="robot-label">{{ robot.name }}</div>
             <div class="status-indicator" :class="{ online: robot.online }"></div>
           </div>
@@ -39,7 +37,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import VideoStreamManager from '../utils/videoStream.js'
 import Layout from '../components/Layout.vue'
 
 const router = useRouter()
@@ -51,13 +48,14 @@ const selectedRobotId = ref(null)
 
 // 模拟多机器人列表（后期从 API 获取）
 const robotList = ref([
-  { id: 'robot_01', name: 'Aloha Mini #1', online: true, videoFrame: '' },
-  { id: 'robot_02', name: 'Aloha Mini #2', online: false, videoFrame: '' },
-  { id: 'robot_03', name: 'SO100 #1', online: false, videoFrame: '' }
+  { id: 'robot_01', name: 'Aloha Mini #1', online: true },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_03', name: 'SO100 #1', online: false }
 ])
 
-// 视频流管理器实例（用于接收所有机器人的视频）
-let videoStream = null
+// WebRTC 相关
+let pc = null
+let ws = null
 
 // 按钮文本
 const buttonText = computed(() => {
@@ -71,19 +69,75 @@ function selectRobot(robot) {
   selectedRobotId.value = robot.id
 }
 
-// 获取图片 src
-function getImageSrc(frameData) {
-  return `data:image/jpeg;base64,${frameData}`
-}
-
-// 更新机器人视频帧（供全局使用）
-async function updateRobotVideoFrame(frameData) {
-  // 目前只有一个机器人，直接更新第一个在线的机器人
-  const onlineRobot = robotList.value.find(r => r.online)
-  if (onlineRobot) {
-    onlineRobot.videoFrame = frameData
-    // 强制触发响应式更新
-    await nextTick()
+// 初始化 WebRTC 连接
+function initWebRTC() {
+  const SERVER_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
+  
+  // 创建 WebSocket 连接
+  ws = new WebSocket(SERVER_URL)
+  
+  ws.onopen = async () => {
+    console.log('WebSocket connected')
+    
+    // 发送初始化消息
+    ws.send(JSON.stringify({ type: 'client' }))
+    
+    // 创建 RTCPeerConnection
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.miwifi.com:3478' },
+        { urls: 'stun:stun.qq.com:3478' }
+      ]
+    })
+    
+    // 处理远程视频流
+    pc.ontrack = (event) => {
+      const video = document.getElementById('robot-video-01')
+      if (video) {
+        video.srcObject = event.streams[0]
+        console.log('视频连接成功')
+      }
+    }
+    
+    // 处理 ICE 候选
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        ws.send(JSON.stringify({
+          type: 'candidate',
+          candidate: event.candidate
+        }))
+      }
+    }
+    
+    // 监听信令消息
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data)
+      
+      if (data.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(data))
+        
+        // 创建 answer
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        
+        // 发送 answer
+        ws.send(JSON.stringify({
+          type: 'answer',
+          sdp: pc.localDescription.sdp
+        }))
+      } else if (data.type === 'candidate') {
+        // ICE 候选由浏览器自动处理
+        console.log('Received candidate')
+      }
+    }
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error)
+    }
+    
+    ws.onclose = () => {
+      console.log('WebSocket closed')
+    }
   }
 }
 
@@ -125,19 +179,19 @@ function setupVREventListeners() {
 onMounted(() => {
   setupVREventListeners()
   
-  // 初始化视频流监听（复用全局 WebSocket）
-  videoStream = new VideoStreamManager()
-  videoStream.onFrameUpdate = (frame) => {
-    updateRobotVideoFrame(frame)
-  }
-  videoStream.connect()
+  // 初始化 WebRTC 视频接收
+  initWebRTC()
 })
 
 onUnmounted(() => {
-  // 断开视频流监听（不断开 WebSocket 连接）
-  if (videoStream) {
-    videoStream.disconnect()
-    videoStream = null
+  // 清理 WebRTC 连接
+  if (pc) {
+    pc.close()
+    pc = null
+  }
+  if (ws) {
+    ws.close()
+    ws = null
   }
 })
 </script>
