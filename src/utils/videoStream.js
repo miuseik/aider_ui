@@ -16,8 +16,6 @@ class VideoStreamManager {
    * 初始化视频流监听（复用全局 WebSocket）
    */
   connect() {
-    console.log('Video stream listening on global WebSocket')
-    
     // 移除旧的监听器（如果存在）
     if (this.messageHandler) {
       wsClient.messageHandlers = wsClient.messageHandlers.filter(h => h !== this.messageHandler)
@@ -35,15 +33,6 @@ class VideoStreamManager {
             }
             const imageUrl = `data:image/jpeg;base64,${robotData.frame}`
             this.displayImage.src = imageUrl
-            
-            // 监听图片加载
-            this.displayImage.onload = () => {
-              console.log('[DEBUG] 图片加载成功，尺寸:', this.displayImage.width, 'x', this.displayImage.height)
-            }
-            this.displayImage.onerror = (e) => {
-              console.error('[DEBUG] 图片加载失败:', e)
-            }
-            
             if (this.onFrameUpdate) {
               this.onFrameUpdate(robotData.frame)
             }

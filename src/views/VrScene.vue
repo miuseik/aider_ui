@@ -365,8 +365,8 @@ function initVideoScreen() {
   
   // 创建 canvas
   videoCanvas = document.createElement('canvas')
-  videoCanvas.width = 1280
-  videoCanvas.height = 720
+  videoCanvas.width = 640
+  videoCanvas.height = 480
   
   videoContext = videoCanvas.getContext('2d')
   
