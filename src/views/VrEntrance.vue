@@ -38,6 +38,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import Layout from '../components/Layout.vue'
+import { wsClient } from '../utils/websocket'
 
 const router = useRouter()
 const emit = defineEmits(['vr-entered'])
@@ -55,7 +56,6 @@ const robotList = ref([
 
 // WebRTC 相关
 let pc = null
-let ws = null
 
 // 按钮文本
 const buttonText = computed(() => {
@@ -71,74 +71,84 @@ function selectRobot(robot) {
 
 // 初始化 WebRTC 连接
 function initWebRTC() {
-  const SERVER_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
+  // 先清理旧连接（防止热重载重复连接）
+  if (pc) {
+    console.log('清理旧的 RTCPeerConnection')
+    pc.close()
+    pc = null
+  }
   
-  // 创建 WebSocket 连接
-  ws = new WebSocket(SERVER_URL)
+  // 使用全局 WebSocket 客户端（App.vue 已初始化）
+  // 等待 WebSocket 连接就绪
+  const checkConnection = setInterval(() => {
+    if (wsClient.isConnected) {
+      clearInterval(checkConnection)
+      setupWebRTC()
+    }
+  }, 100)
   
-  ws.onopen = async () => {
-    console.log('WebSocket connected')
-    
-    // 发送初始化消息
-    ws.send(JSON.stringify({ type: 'client' }))
-    
-    // 创建 RTCPeerConnection
-    pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.miwifi.com:3478' },
-        { urls: 'stun:stun.qq.com:3478' }
-      ]
-    })
-    
-    // 处理远程视频流
-    pc.ontrack = (event) => {
-      const video = document.getElementById('robot-video-01')
-      if (video) {
-        video.srcObject = event.streams[0]
-        console.log('视频连接成功')
-      }
+  // 超时处理
+  setTimeout(() => {
+    clearInterval(checkConnection)
+    if (!wsClient.isConnected) {
+      console.error('WebSocket 连接超时')
     }
-    
-    // 处理 ICE 候选
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        ws.send(JSON.stringify({
-          type: 'candidate',
-          candidate: event.candidate
-        }))
-      }
-    }
-    
-    // 监听信令消息
-    ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data)
-      
-      if (data.type === 'offer') {
-        await pc.setRemoteDescription(new RTCSessionDescription(data))
-        
-        // 创建 answer
-        const answer = await pc.createAnswer()
-        await pc.setLocalDescription(answer)
-        
-        // 发送 answer
-        ws.send(JSON.stringify({
-          type: 'answer',
-          sdp: pc.localDescription.sdp
-        }))
-      } else if (data.type === 'candidate') {
-        // ICE 候选由浏览器自动处理
-        console.log('Received candidate')
-      }
-    }
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-    }
-    
-    ws.onclose = () => {
-      console.log('WebSocket closed')
+  }, 5000)
+}
+
+// 设置 WebRTC
+function setupWebRTC() {
+  console.log('WebSocket 已连接，开始设置 WebRTC')
+
+  // 创建 RTCPeerConnection
+  pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: 'stun:stun.miwifi.com:3478' },
+      { urls: 'stun:stun.qq.com:3478' }
+    ]
+  })
+  
+  // 处理远程视频流
+  pc.ontrack = (event) => {
+    console.log('收到视频流:', event.streams)
+    const robotIndex = selectedRobotId.value ? selectedRobotId.value.split('_')[1] : '01'
+    const video = document.getElementById(`robot-video-${robotIndex}`)
+    if (video) {
+      video.srcObject = event.streams[0]
+      console.log('✅ 视频已连接到 robot-video-' + robotIndex)
+    } else {
+      console.error('❌ 找不到 video 元素: robot-video-' + robotIndex)
     }
   }
+  
+  // 处理 ICE 候选
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      wsClient.send(JSON.stringify({
+        type: 'candidate',
+        candidate: event.candidate
+      }))
+    }
+  }
+  
+  // 监听信令消息
+  wsClient.onMessage(async (data) => {
+    if (data.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(data))
+      
+      // 创建 answer
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+      
+      // 发送 answer
+      wsClient.send(JSON.stringify({
+        type: 'answer',
+        sdp: pc.localDescription.sdp
+      }))
+    } else if (data.type === 'candidate') {
+      console.log('Received candidate')
+    }
+  })
 }
 
 // 处理开始跟踪
@@ -188,10 +198,6 @@ onUnmounted(() => {
   if (pc) {
     pc.close()
     pc = null
-  }
-  if (ws) {
-    ws.close()
-    ws = null
   }
 })
 </script>

@@ -23,9 +23,11 @@ class WebSocketClient {
   }
 
   connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('WebSocket 已连接')
-      return
+    // 先断开旧连接（防止热重载重复连接）
+    if (this.ws) {
+      this.ws.onclose = null  // 移除旧的事件处理器，避免触发重连
+      this.ws.close()
+      this.ws = null
     }
 
     try {
