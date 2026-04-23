@@ -1,42 +1,44 @@
 <template>
-  <div class="vr-container" ref="sceneRef">
-    <!-- A-Frame VR 场景 -->
-    <a-scene vr-mode-ui="enabled: false;">
-      <!-- Passthrough setup -->
-      <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
+  <Layout>
+    <div class="vr-container" ref="sceneRef">
+      <!-- A-Frame VR 场景 -->
+      <a-scene vr-mode-ui="enabled: false;">
+        <!-- Passthrough setup -->
+        <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
 
-      <!-- Controllers -->
-      <a-entity id="leftHand" oculus-touch-controls="hand: left">
-        <a-text 
-          id="leftHandInfo" 
-          value="Pos: ...\nRot: ..." 
-          position="0 0.04 -0.05" 
-          rotation="0 0 0" 
-          scale="0.05 0.05 0.05" 
-          color="white" 
-          align="center"
-        ></a-text>
-      </a-entity>
-      
-      <a-entity id="rightHand" oculus-touch-controls="hand: right">
-        <a-text 
-          id="rightHandInfo" 
-          value="Pos: ...\nRot: ..." 
-          position="0 0.04 -0.05" 
-          rotation="0 0 0" 
-          scale="0.05 0.05 0.05" 
-          color="white" 
-          align="center"
-        ></a-text>
-      </a-entity>
-      
-      <!-- 数据中心面板（作为 3D 对象添加到场景中） -->
-      <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
-      
-      <!-- 视频屏幕（3D 对象） -->
-      <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
-    </a-scene>
-  </div>
+        <!-- Controllers -->
+        <a-entity id="leftHand" oculus-touch-controls="hand: left">
+          <a-text 
+            id="leftHandInfo" 
+            value="Pos: ...\nRot: ..." 
+            position="0 0.04 -0.05" 
+            rotation="0 0 0" 
+            scale="0.05 0.05 0.05" 
+            color="white" 
+            align="center"
+          ></a-text>
+        </a-entity>
+        
+        <a-entity id="rightHand" oculus-touch-controls="hand: right">
+          <a-text 
+            id="rightHandInfo" 
+            value="Pos: ...\nRot: ..." 
+            position="0 0.04 -0.05" 
+            rotation="0 0 0" 
+            scale="0.05 0.05 0.05" 
+            color="white" 
+            align="center"
+          ></a-text>
+        </a-entity>
+        
+        <!-- 数据中心面板（作为 3D 对象添加到场景中） -->
+        <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
+        
+        <!-- 视频屏幕（3D 对象） -->
+        <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
+      </a-scene>
+    </div>
+  </Layout>
 </template>
 
 <script setup>
@@ -47,6 +49,7 @@ import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
 import VideoStreamManager from '../utils/videoStream.js'
 import controllerManager from '../utils/controllerManager.js'
+import Layout from '../components/Layout.vue'
 
 const sceneRef = ref(null)
 let dataPanelMesh = null

@@ -1,43 +1,46 @@
 <template>
-  <div class="vr-ui-container">
-    <!-- 多机器人视频网格 -->
-    <div class="robot-grid">
-      <div 
-        v-for="robot in robotList" 
-        :key="robot.id"
-        class="robot-card"
-        :class="{ selected: selectedRobotId === robot.id }"
-      >
-        <div class="video-container" @click="selectRobot(robot)">
-          <img 
-            v-if="robot.videoFrame" 
-            :src="getImageSrc(robot.videoFrame)" 
-            class="robot-video"
-          />
-          <div v-else class="video-placeholder">
-            <div class="placeholder-text">{{ robot.name }}</div>
-          </div>
-          <div class="robot-label">{{ robot.name }}</div>
-          <div class="status-indicator" :class="{ online: robot.online }"></div>
-        </div>
-        
-        <!-- 每个机器人的进入按钮 -->
-        <button 
-          class="enter-vr-btn"
-          :disabled="isConnecting || !robot.online"
-          @click="handleStartTracking(robot)"
+  <Layout>
+    <div class="vr-ui-container">
+      <!-- 多机器人视频网格 -->
+      <div class="robot-grid">
+        <div 
+          v-for="robot in robotList" 
+          :key="robot.id"
+          class="robot-card"
+          :class="{ selected: selectedRobotId === robot.id }"
         >
-          {{ isConnecting && selectedRobotId === robot.id ? '连接中...' : '进入 VR' }}
-        </button>
+          <div class="video-container" @click="selectRobot(robot)">
+            <img 
+              v-if="robot.videoFrame" 
+              :src="getImageSrc(robot.videoFrame)" 
+              class="robot-video"
+            />
+            <div v-else class="video-placeholder">
+              <div class="placeholder-text">{{ robot.name }}</div>
+            </div>
+            <div class="robot-label">{{ robot.name }}</div>
+            <div class="status-indicator" :class="{ online: robot.online }"></div>
+          </div>
+          
+          <!-- 每个机器人的进入按钮 -->
+          <button 
+            class="enter-vr-btn"
+            :disabled="isConnecting || !robot.online"
+            @click="handleStartTracking(robot)"
+          >
+            {{ isConnecting && selectedRobotId === robot.id ? '连接中...' : '进入 VR' }}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
+  </Layout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import VideoStreamManager from '../utils/videoStream.js'
+import Layout from '../components/Layout.vue'
 
 const router = useRouter()
 const emit = defineEmits(['vr-entered'])
@@ -94,26 +97,8 @@ async function handleStartTracking(robot) {
   isConnecting.value = true
   
   try {
-    // 检查机械臂状态
-    const statusResponse = await fetch('/api/status')
-    const status = await statusResponse.json()
-    console.log(status)
-    if (!status.robotEngaged) {
-      // 连接机械臂
-      const connectResponse = await fetch('/api/robot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'connect' })
-      })
-      const connectResult = await connectResponse.json()
-      
-      if (!connectResult.success) {
-        throw new Error(connectResult.error || '无法连接机器人机械臂')
-      }
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    
     // 直接跳转到 VrScene 页面
+    await new Promise(resolve => setTimeout(resolve, 300))
     router.push('/vr-scene')
   } catch (err) {
     alert(`启动失败: ${err.message}`)
