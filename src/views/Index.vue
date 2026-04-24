@@ -128,7 +128,7 @@ const wsConnected = ref(false)
 const router = useRouter()
 
 // 环境变量
-const apiUrl = import.meta.env.VITE_API_URL || 'https://localhost:8443'
+const apiUrl = import.meta.env.VITE_API_URL || 'https://localhost:8442'
 const wsUrl = import.meta.env.VITE_WS_URL ? import.meta.env.VITE_WS_URL.replace('wss://', 'https://').replace('/ws', '') : 'https://localhost:8442'
 
 // Composables

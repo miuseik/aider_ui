@@ -21,7 +21,7 @@ onMounted(() => {
   initThreeJS()
 
   // 再初始化视频流
-  videoStream = new VideoStreamManager(8443)
+  videoStream = new VideoStreamManager(8442)
   videoStream.onFrameUpdate = (frame) => {
     videoFrame.value = frame
   }

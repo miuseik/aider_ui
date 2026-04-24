@@ -9,7 +9,7 @@ export function useConfig() {
       send_interval: 0.05
     },
     network: {
-      https_port: 8443,
+      https_port: 8442,
       websocket_port: 8442,
       host_ip: '0.0.0.0'
     },

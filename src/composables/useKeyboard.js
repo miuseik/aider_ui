@@ -42,10 +42,10 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning, simulationMod
       })
       const data = await response.json()
       
-      if (data.success) {
+      if (data.code === 200 && data.data?.success) {
         isKeyboardEnabled.value = !isKeyboardEnabled.value
       } else {
-        alert('切换键盘控制失败')
+        alert('切换键盘控制失败: ' + (data.message || '未知错误'))
       }
     } catch (error) {
       console.error('Error toggling keyboard control:', error)

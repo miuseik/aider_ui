@@ -4,7 +4,7 @@
 
 class ControllerManager {
   private ws: WebSocket | null = null
-  private serverPort: number = 8443
+  private serverPort: number = 8442
   private lastLeftSendTime: number = 0
   private lastRightSendTime: number = 0
   private sendInterval: number = 16 // 16ms 发送间隔，约 60Hz

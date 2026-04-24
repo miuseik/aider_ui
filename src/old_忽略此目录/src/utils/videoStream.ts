@@ -6,7 +6,7 @@ import WebSocketManager from './websocketManager'
 
 class VideoStreamManager {
   private ws: WebSocket | null = null
-  private serverPort: number = 8443
+  private serverPort: number = 8442
   private displayImage: HTMLImageElement | null = null
   public onFrameUpdate: ((frame: string) => void) | null = null
 
