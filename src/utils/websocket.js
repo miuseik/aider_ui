@@ -31,22 +31,24 @@ class WebSocketClient {
     }
 
     try {
-      console.log(`正在连接 WebSocket: ${this.url}`)
+      console.log(`🔌 正在连接 WebSocket: ${this.url}`)
       this.ws = new WebSocket(this.url)
 
       this.ws.onopen = () => {
-        console.log('WebSocket 连接成功')
+        console.log('✅ WebSocket 连接成功')
         this.isConnected = true
         this.reconnectAttempts = 0
         
         // 发送身份认证
-        this.ws.send(JSON.stringify({ type: this.clientType }))
-        console.log(`已发送 ${this.clientType} 身份认证`)
+        const authMsg = { type: this.clientType }
+        this.ws.send(JSON.stringify(authMsg))
+        console.log(`📨 已发送 ${this.clientType} 身份认证:`, authMsg)
         
         this.notifyHandlers({ type: 'connected' })
       }
 
       this.ws.onmessage = (event) => {
+        console.log('📥 收到 WebSocket 消息:', event.data.substring(0, 200))
         // 处理文本消息
         try {
           const data = JSON.parse(event.data)
@@ -57,22 +59,22 @@ class WebSocketClient {
       }
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket 错误:', error)
+        console.error('❌ WebSocket 错误:', error)
         this.notifyHandlers({ type: 'error', error })
       }
 
       this.ws.onclose = (event) => {
-        console.log(`WebSocket 关闭: ${event.code} - ${event.reason}`)
+        console.log(`⚠️ WebSocket 关闭: code=${event.code}, reason=${event.reason || '无'}`)
         this.isConnected = false
         this.notifyHandlers({ type: 'disconnected' })
         
         // 自动重连（无限重试）
         this.reconnectAttempts++
-        console.log(`${this.reconnectInterval / 1000}秒后尝试重连 (第${this.reconnectAttempts}次)`)
+        console.log(`🔄 ${this.reconnectInterval / 1000}秒后尝试重连 (第${this.reconnectAttempts}次)`)
         setTimeout(() => this.connect(), this.reconnectInterval)
       }
     } catch (error) {
-      console.error('创建 WebSocket 连接失败:', error)
+      console.error('❌ 创建 WebSocket 连接失败:', error)
     }
   }
 
@@ -86,10 +88,12 @@ class WebSocketClient {
 
   send(data) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(typeof data === 'string' ? data : JSON.stringify(data))
+      const message = typeof data === 'string' ? data : JSON.stringify(data)
+      console.log('📤 发送 WebSocket 消息:', message.substring(0, 200))
+      this.ws.send(message)
       return true
     } else {
-      console.warn('WebSocket 未连接,无法发送消息')
+      console.warn('⚠️ WebSocket 未连接,无法发送消息. 当前状态:', this.getState())
       return false
     }
   }

@@ -12,6 +12,18 @@
             <el-button size="small" type="success" plain @click="openCertAuth(wsUrl)">WS</el-button>
           </div>
           
+          <!-- WebSocket 测试按钮 -->
+          <el-button 
+            size="small" 
+            type="warning" 
+            plain 
+            @click="sendTestVRData"
+            :disabled="!wsConnected"
+            title="发送测试 VR 数据"
+          >
+            🎮 测试手柄
+          </el-button>
+          
           <el-button 
             icon="Tools" 
             circle 
@@ -93,12 +105,13 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElConfigProvider } from 'element-plus'
+import { ElConfigProvider, ElMessage } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { Sunny, Moon } from '@element-plus/icons-vue'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
+import { wsClient } from '../utils/websocket'
 import SettingsModal from '../components/SettingsModal.vue'
 import DesktopInterface from '../components/DesktopInterface.vue'
 import CalibrationPage from './Calibration.vue'
@@ -109,6 +122,7 @@ const settingsVisible = ref(false)
 const showCalibration = ref(false)
 const isDarkMode = ref(false)
 const simulationMode = ref(false)
+const wsConnected = ref(false)
 
 // Router
 const router = useRouter()
@@ -149,6 +163,35 @@ function switchToVrView() {
   router.push('/vr-entrance')
 }
 
+// 发送测试 VR 数据
+function sendTestVRData() {
+  if (!wsClient.isConnected) {
+    ElMessage.warning('WebSocket 未连接')
+    return
+  }
+  
+  // 构造测试的 VR 控制器数据（左手）
+  const testData = {
+    leftController: {
+      position: [0.5, 0.3, 0.4],
+      quaternion: { x: 0, y: 0, z: 0, w: 1 },
+      trigger: 0.8,
+      gripActive: true,
+      thumbstick: { x: 0, y: 0 }
+    },
+    rightController: {
+      position: null,
+      quaternion: null,
+      trigger: 0,
+      gripActive: false
+    }
+  }
+  
+  wsClient.send(testData)
+  ElMessage.success('已发送测试 VR 数据')
+  console.log('📤 发送测试数据:', testData)
+}
+
 // Lifecycle
 
 onMounted(() => {
@@ -165,14 +208,17 @@ onMounted(() => {
   // 同步全局 WebSocket 状态
   if (window.__globalStatus) {
     status.wsConnected = window.__globalStatus.wsConnected
+    wsConnected.value = window.__globalStatus.wsConnected
     // 监听变化
     const observer = new MutationObserver(() => {
       status.wsConnected = window.__globalStatus.wsConnected
+      wsConnected.value = window.__globalStatus.wsConnected
     })
     // 简单轮询检查（Vue3 reactive 不会触发MutationObserver）
     const checkInterval = setInterval(() => {
       if (window.__globalStatus) {
         status.wsConnected = window.__globalStatus.wsConnected
+        wsConnected.value = window.__globalStatus.wsConnected
       }
     }, 500)
     
