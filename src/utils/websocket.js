@@ -12,7 +12,7 @@ class WebSocketClient {
 
   getDefaultUrl() {
     // 使用环境变量配置的 WebSocket URL
-    return import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
+    return import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
   }
 
   /**

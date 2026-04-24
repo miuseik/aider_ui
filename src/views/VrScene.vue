@@ -119,7 +119,7 @@ onUnmounted(() => {
 
 // 初始化 WebRTC 连接
 function initWebRTC() {
-  const SERVER_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/ws`
+  const SERVER_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
   
   // 创建 WebSocket 连接
   ws = new WebSocket(SERVER_URL)
