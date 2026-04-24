@@ -177,8 +177,12 @@ function connect() {
 
 // 处理按钮点击
 function handleConnectClick() {
+  console.log(`[${props.videoId}] 点击连接按钮, 当前状态:`, isConnected.value)
   if (!isConnected.value) {
+    console.log(`[${props.videoId}] 开始连接...`)
     connect()
+  } else {
+    console.log(`[${props.videoId}] 已经连接,忽略点击`)
   }
 }
 
@@ -189,10 +193,7 @@ defineExpose({
 })
 
 onMounted(() => {
-  // 延迟自动连接
-  setTimeout(() => {
-    initWebRTC()
-  }, 500)
+  // 不自动连接,等待用户点击按钮
 })
 
 onUnmounted(() => {

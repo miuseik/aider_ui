@@ -9,26 +9,15 @@
           class="robot-card"
           :class="{ selected: selectedRobotId === robot.id }"
         >
-          <div class="video-container" @click="selectRobot(robot)">
-            <video
-              :id="`robot-video-${robot.id.split('_')[1]}`"
-              autoplay
-              playsinline
-              class="robot-video"
-            />
-            <div class="video-status" v-if="!videoConnected">等待连接...</div>
-            <div class="robot-label">{{ robot.name }}</div>
-            <div class="status-indicator" :class="{ online: robot.online }"></div>
-          </div>
-
-          <!-- 连接视频按钮 -->
-          <button
-            class="connect-video-btn"
-            :disabled="isConnecting || !robot.online"
-            @click="connectVideo(robot)"
-          >
-            {{ videoConnected ? '✅ 已连接' : '📹 连接视频' }}
-          </button>
+          <VideoStream
+            :video-id="`robot-video-${robot.id.split('_')[1]}`"
+            :label="robot.name"
+            :is-online="robot.online"
+            :ws-url="WS_URL"
+            @click="selectRobot(robot)"
+            @connected="handleVideoConnected(robot.id)"
+            @disconnected="handleVideoDisconnected(robot.id)"
+          />
           
           <!-- 每个机器人的进入按钮 -->
           <button 
@@ -56,167 +45,50 @@ const emit = defineEmits(['vr-entered'])
 const isVRMode = ref(false)
 const isConnecting = ref(false)
 const selectedRobotId = ref(null)
-const videoConnected = ref(false)
+const connectedVideos = ref(new Set())
+
+// WebSocket URL
+const WS_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
 
 // 模拟多机器人列表（后期从 API 获取）
 const robotList = ref([
   { id: 'robot_01', name: 'Aloha Mini #1', online: true },
   { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
+  { id: 'robot_02', name: 'Aloha Mini #2', online: false },
   { id: 'robot_03', name: 'SO100 #1', online: false }
 ])
-
-// WebRTC 相关
-let pc = null
-let ws = null
-
-// 按钮文本
-const buttonText = computed(() => {
-  if (isConnecting.value) return '连接中...'
-  if (!selectedRobotId.value) return '请选择机器人'
-  return '开始控制器跟踪'
-})
 
 // 选择机器人
 function selectRobot(robot) {
   selectedRobotId.value = robot.id
 }
 
-// 连接视频
-function connectVideo(robot) {
-  if (!robot || !robot.online) return
-
-  selectedRobotId.value = robot.id
-
-  // 如果已经连接,先断开
-  if (pc) {
-    pc.close()
-    pc = null
-  }
-  if (ws) {
-    ws.close()
-    ws = null
-  }
-
-  // 重新初始化 WebRTC
-  initWebRTC()
+// 视频连接成功
+function handleVideoConnected(robotId) {
+  connectedVideos.value.add(robotId)
+  console.log(`✅ ${robotId} 视频已连接`)
 }
 
-// 初始化 WebRTC 连接
-function initWebRTC() {
-  const SERVER_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
-
-  // 先清理旧连接（防止热重载重复连接）
-  if (pc) {
-    console.log('清理旧的 RTCPeerConnection')
-    pc.close()
-    pc = null
-  }
-  if (ws) {
-    ws.close()
-    ws = null
-  }
-
-  // 创建 WebSocket 连接(使用唯一 ID)
-  const clientId = 'entrance_' + Date.now()
-  const fullUrl = `${SERVER_URL.split('/vr/client')[0]}/vr/client/${clientId}`
-  ws = new WebSocket(fullUrl)
-
-  ws.onopen = async () => {
-    console.log('WebSocket connected')
-
-    // 发送初始化消息
-    ws.send(JSON.stringify({ type: 'client' }))
-
-    setupWebRTC()
-  }
-
-  ws.onerror = (error) => {
-    console.error('WebSocket error:', error)
-  }
-
-  ws.onclose = () => {
-    console.log('WebSocket closed')
-  }
-}
-
-// 设置 WebRTC
-function setupWebRTC() {
-  console.log('WebSocket 已连接，开始设置 WebRTC')
-
-  // 创建 RTCPeerConnection
-  pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: 'stun:stun.miwifi.com:3478' },
-      { urls: 'stun:stun.qq.com:3478' }
-    ]
-  })
-
-  // 处理远程视频流
-  pc.ontrack = (event) => {
-    console.log('收到视频轨道:', event.track.kind)
-    const robotIndex = selectedRobotId.value ? selectedRobotId.value.split('_')[1] : '01'
-    const video = document.getElementById(`robot-video-${robotIndex}`)
-    if (video && event.streams[0]) {
-      video.srcObject = event.streams[0]
-      console.log('✅ 视频已连接到 robot-video-' + robotIndex)
-      videoConnected.value = true  // 标记视频已连接
-
-      // 监听视频播放状态
-      video.onplay = () => {
-        console.log('视频开始播放')
-      }
-      video.onerror = (e) => {
-        console.error('视频播放错误:', e)
-        videoConnected.value = false
-      }
-    } else {
-      console.error('❌ 找不到 video 元素或没有视频流: robot-video-' + robotIndex)
-      videoConnected.value = false
-    }
-  }
-
-  // 处理 ICE 候选
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      ws.send(JSON.stringify({
-        type: 'candidate',
-        candidate: event.candidate
-      }))
-    }
-  }
-
-  // 监听连接状态变化
-  pc.onconnectionstatechange = () => {
-    console.log('WebRTC 连接状态:', pc.connectionState)
-    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-      console.error('WebRTC 连接失败,尝试重连...')
-      // 5秒后重连
-      setTimeout(() => {
-        initWebRTC()
-      }, 5000)
-    }
-  }
-
-  // 监听信令消息
-  ws.onmessage = async (event) => {
-    const data = JSON.parse(event.data)
-
-    if (data.type === 'offer') {
-      await pc.setRemoteDescription(new RTCSessionDescription(data))
-
-      // 创建 answer
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-
-      // 发送 answer
-      ws.send(JSON.stringify({
-        type: 'answer',
-        sdp: pc.localDescription.sdp
-      }))
-    } else if (data.type === 'candidate') {
-      console.log('Received candidate')
-    }
-  }
+// 视频断开连接
+function handleVideoDisconnected(robotId) {
+  connectedVideos.value.delete(robotId)
+  console.log(`❌ ${robotId} 视频已断开`)
 }
 
 // 处理开始跟踪
@@ -256,76 +128,85 @@ function setupVREventListeners() {
 
 onMounted(() => {
   setupVREventListeners()
-
-  // 初始化 WebRTC 视频接收
-  initWebRTC()
-
-  // 延迟自动连接第一个在线机器人
-  setTimeout(() => {
-    const onlineRobot = robotList.value.find(r => r.online)
-    if (onlineRobot) {
-      connectVideo(onlineRobot)
-    }
-  }, 500)
 })
 
 onUnmounted(() => {
-  // 清理 WebRTC 连接
-  if (pc) {
-    pc.close()
-    pc = null
-  }
-  if (ws) {
-    ws.close()
-    ws = null
-  }
+  // 组件卸载时不需要清理,VideoStream 组件会自己清理
 })
 </script>
 
 <style scoped lang="scss">
 .vr-ui-container {
   position: fixed;
-  top: 0;
+  top: 60px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh - 60px);
   pointer-events: none;
   z-index: 9998;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 40px;
+  overflow-y: auto;
 }
 
-/* 机器人网格布局 */
+/* 自定义滚动条样式 */
+.vr-ui-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.vr-ui-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.vr-ui-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 136, 0.3);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+
+  &:hover {
+    background: rgba(0, 255, 136, 0.5);
+  }
+}
+
+.vr-ui-container::-webkit-scrollbar-thumb:active {
+  background: rgba(0, 255, 136, 0.7);
+}
+
+/* 机器人网格布局 - 响应式自适应 */
 .robot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
   width: 100%;
-  max-width: 1400px;
-  margin-bottom: 40px;
+  max-width: 1600px;
   pointer-events: auto;
 }
 
 .robot-card {
   cursor: pointer;
-  transition: all 0.3s ease;
-  border-radius: 12px;
+  transition: all 0.2s ease;
+  border-radius: 8px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
   border: 2px solid transparent;
+  height: auto;
+  display: flex;
+  flex-direction: column;
 
   &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 24px rgba(0, 255, 136, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 255, 136, 0.2);
+    border-color: rgba(0, 255, 136, 0.3);
   }
 
   &.selected {
     border-color: #00ff88;
-    box-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
   }
 }
 
@@ -476,5 +357,18 @@ onUnmounted(() => {
     cursor: not-allowed;
     opacity: 0.6;
   }
+}
+
+/* 临时测试区域 */
+.test-area {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid #00ff88;
+  pointer-events: auto;
+  z-index: 9999;
 }
 </style>
