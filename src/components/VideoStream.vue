@@ -11,6 +11,11 @@
       <div class="robot-label">{{ label }}</div>
       <div class="status-indicator" :class="{ online: isOnline }"></div>
       
+      <!-- 连接类型指示 -->
+      <div class="connection-type" v-if="isConnected && connectionType">
+        {{ connectionType }}
+      </div>
+      
       <!-- 播放按钮 - 左下角 -->
       <button 
         class="play-btn"
@@ -49,6 +54,7 @@ const props = defineProps({
 const emit = defineEmits(['click', 'connected', 'disconnected'])
 
 const isConnected = ref(false)
+const connectionType = ref('')
 let manager = null
 
 // 初始化 WebRTC 连接
@@ -56,12 +62,14 @@ function initWebRTC() {
   manager = new WebRTCVideoManager({
     videoId: props.videoId,
     wsUrl: props.wsUrl,
-    onConnected: () => {
+    onConnected: (type) => {
       isConnected.value = true
+      connectionType.value = type || ''
       emit('connected')
     },
     onDisconnected: () => {
       isConnected.value = false
+      connectionType.value = ''
       emit('disconnected')
     },
     onError: (error) => {
@@ -164,6 +172,18 @@ onUnmounted(() => {
     background: #00ff88;
     box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
   }
+}
+
+.connection-type {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #00ff88;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
 }
 
 .play-btn {

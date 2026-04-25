@@ -59,9 +59,9 @@ export class WebRTCVideoManager {
     this.pc = new RTCPeerConnection({
       iceServers: [
         // 国内 STUN
-        { urls: 'stun:stun.miwifi.com:3478' },
-        { urls: 'stun:stun.qq.com:3478' },
-        { urls: 'stun:stun.bige0.com:3391' },
+        // { urls: 'stun:stun.miwifi.com:3478' },
+        // { urls: 'stun:stun.qq.com:3478' },
+        // { urls: 'stun:stun.bige0.com:3391' },
         // 自建 TURN 服务器
         {
           urls: 'turn:121.40.151.10:3478',
@@ -85,7 +85,7 @@ export class WebRTCVideoManager {
         video.srcObject = event.streams[0]
         console.log(`[${this.videoId}] ✅ 视频已连接`)
         this.isConnected = true
-        this.onConnected()
+        this.onConnected('P2P')  // 默认 P2P,后续会更新
         
         // 监听视频播放状态
         video.onplay = () => {
@@ -114,8 +114,30 @@ export class WebRTCVideoManager {
     }
     
     // 监听连接状态变化
-    this.pc.onconnectionstatechange = () => {
+    this.pc.onconnectionstatechange = async () => {
       console.log(`[${this.videoId}] WebRTC 连接状态:`, this.pc.connectionState)
+      
+      if (this.pc.connectionState === 'connected') {
+        // 检查使用的是 P2P 还是 TURN
+        const stats = await this.pc.getStats()
+        let connectionType = 'unknown'
+        stats.forEach(stat => {
+          if (stat.type === 'candidate-pair' && stat.state === 'succeeded') {
+            const localCandidate = stats.get(stat.localCandidateId)
+            if (localCandidate?.candidateType === 'relay') {
+              connectionType = 'TURN (中继)'
+            } else if (localCandidate?.candidateType === 'srflx') {
+              connectionType = 'STUN (P2P)'
+            } else if (localCandidate?.candidateType === 'host') {
+              connectionType = 'Host (局域网)'
+            }
+          }
+        })
+        console.log(`[${this.videoId}] 🌐 连接类型: ${connectionType}`)
+        // 传递连接类型给父组件
+        this.onConnected(connectionType)
+      }
+      
       if (this.pc.connectionState === 'failed' || this.pc.connectionState === 'disconnected') {
         console.error(`[${this.videoId}] WebRTC 连接失败,尝试重连...`)
         // 5秒后重连
