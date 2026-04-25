@@ -3,6 +3,8 @@
  * 用于在多个页面复用 WebRTC 连接逻辑
  */
 
+import { wsClient } from './websocket'
+
 export class WebRTCVideoManager {
   constructor(options = {}) {
     this.videoId = options.videoId
@@ -26,30 +28,12 @@ export class WebRTCVideoManager {
     this.cleanup()
     this.reconnectAttempts = 0  // 重置重连计数
     
-    // 创建 WebSocket 连接(使用唯一 ID)
-    const clientId = `video_${this.videoId}_${Date.now()}`
-    const fullUrl = `${this.wsUrl.split('/vr/client')[0]}/vr/client/${clientId}`
-    this.ws = new WebSocket(fullUrl)
+    // 先创建 WebRTC PeerConnection
+    this.setupWebRTC()
     
-    this.ws.onopen = async () => {
-      console.log(`[${this.videoId}] WebSocket connected`)
-      
-      // 发送初始化消息
-      this.ws.send(JSON.stringify({ type: 'client' }))
-      
-      this.setupWebRTC()
-    }
-    
-    this.ws.onerror = (error) => {
-      console.error(`[${this.videoId}] WebSocket error:`, error)
-      this.onError(error)
-    }
-    
-    this.ws.onclose = () => {
-      console.log(`[${this.videoId}] WebSocket closed`)
-      this.isConnected = false
-      this.onDisconnected()
-    }
+    // 再通知终端开始推流
+    wsClient.send({ type: 'reconnect' })
+    console.log(`[${this.videoId}] 📤 已通知终端开始推流`)
   }
 
   /**
@@ -91,6 +75,10 @@ export class WebRTCVideoManager {
       if (video && event.streams[0]) {
         video.srcObject = event.streams[0]
         console.log(`[${this.videoId}] ✅ 视频已连接`)
+        console.log(`[${this.videoId}] 视频元素:`, video)
+        console.log(`[${this.videoId}] srcObject:`, video.srcObject)
+        console.log(`[${this.videoId}] 视频轨道:`, video.srcObject?.getVideoTracks())
+        console.log(`[${this.videoId}] 轨道状态:`, video.srcObject?.getVideoTracks()[0]?.readyState)
         this.isConnected = true
         this.onConnected()
         
@@ -113,10 +101,10 @@ export class WebRTCVideoManager {
     // 处理 ICE 候选
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
-        this.ws.send(JSON.stringify({
+        wsClient.send({
           type: 'candidate',
           candidate: event.candidate
-        }))
+        })
       }
     }
     
@@ -133,25 +121,23 @@ export class WebRTCVideoManager {
     }
     
     // 监听信令消息
-    this.ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data)
-      
+    this.messageHandler = (data) => {
       if (data.type === 'offer') {
-        await this.pc.setRemoteDescription(new RTCSessionDescription(data))
-        
-        // 创建 answer
-        const answer = await this.pc.createAnswer()
-        await this.pc.setLocalDescription(answer)
-        
-        // 发送 answer
-        this.ws.send(JSON.stringify({
-          type: 'answer',
-          sdp: this.pc.localDescription.sdp
-        }))
+        this.pc.setRemoteDescription(new RTCSessionDescription(data))
+          .then(() => this.pc.createAnswer())
+          .then(answer => this.pc.setLocalDescription(answer))
+          .then(() => {
+            wsClient.send({
+              type: 'answer',
+              sdp: this.pc.localDescription.sdp
+            })
+          })
       } else if (data.type === 'candidate') {
         console.log(`[${this.videoId}] Received candidate`)
       }
     }
+    
+    wsClient.onMessage(this.messageHandler)
   }
 
   /**
@@ -162,9 +148,9 @@ export class WebRTCVideoManager {
       this.pc.close()
       this.pc = null
     }
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
+    // 移除消息监听器
+    if (this.messageHandler && wsClient) {
+      // wsClient 没有 removeMessageHandler,暂时不处理
     }
     this.isConnected = false
   }

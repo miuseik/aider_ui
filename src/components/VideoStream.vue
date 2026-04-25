@@ -107,6 +107,9 @@ defineExpose({
 
 onMounted(() => {
   // 不自动连接,等待用户点击按钮
+  setTimeout(()=>{
+    // handleConnectClick()
+  },1000)
 })
 
 onUnmounted(() => {
