@@ -14,6 +14,8 @@ export class WebRTCVideoManager {
     this.pc = null
     this.ws = null
     this.isConnected = false
+    this.reconnectAttempts = 0
+    this.maxReconnectAttempts = 3  // 最多重连 3 次
   }
 
   /**
@@ -22,6 +24,7 @@ export class WebRTCVideoManager {
   init() {
     // 先清理旧连接
     this.cleanup()
+    this.reconnectAttempts = 0  // 重置重连计数
     
     // 创建 WebSocket 连接(使用唯一 ID)
     const clientId = `video_${this.videoId}_${Date.now()}`
@@ -62,7 +65,7 @@ export class WebRTCVideoManager {
         // { urls: 'stun:stun.miwifi.com:3478' },
         // { urls: 'stun:stun.qq.com:3478' },
         // { urls: 'stun:stun.bige0.com:3391' },
-        // 自建 TURN 服务器
+        // 自建 TURN 服务器 (强制中继)
         {
           urls: 'turn:121.40.151.10:3478',
           username: 'aider',
@@ -74,7 +77,8 @@ export class WebRTCVideoManager {
           credential: 'aider123456'
         }
       ],
-      iceCandidatePoolSize: 10  // ICE 候选池大小
+      iceCandidatePoolSize: 10,  // ICE 候选池大小
+      iceTransportPolicy: 'relay'  // 强制使用 TURN 中继
     })
     
     // 处理远程视频流
@@ -83,9 +87,9 @@ export class WebRTCVideoManager {
       const video = document.getElementById(this.videoId)
       if (video && event.streams[0]) {
         video.srcObject = event.streams[0]
-        console.log(`[${this.videoId}] ✅ 视频已连接`)
+        console.log('✅ 视频已连接',event.streams)
         this.isConnected = true
-        this.onConnected('P2P')  // 默认 P2P,后续会更新
+        // 不立即调用 onConnected,等待 stats 判断完成
         
         // 监听视频播放状态
         video.onplay = () => {
@@ -115,31 +119,59 @@ export class WebRTCVideoManager {
     
     // 监听连接状态变化
     this.pc.onconnectionstatechange = async () => {
-      console.log(`[${this.videoId}] WebRTC 连接状态:`, this.pc.connectionState)
+      const state = this.pc?.connectionState
+      console.log(`[${this.videoId}] WebRTC 状态: ${state}`)
       
-      if (this.pc.connectionState === 'connected') {
-        // 检查使用的是 P2P 还是 TURN
-        const stats = await this.pc.getStats()
-        let connectionType = 'unknown'
-        stats.forEach(stat => {
-          if (stat.type === 'candidate-pair' && stat.state === 'succeeded') {
-            const localCandidate = stats.get(stat.localCandidateId)
-            if (localCandidate?.candidateType === 'relay') {
-              connectionType = 'TURN (中继)'
-            } else if (localCandidate?.candidateType === 'srflx') {
-              connectionType = 'STUN (P2P)'
-            } else if (localCandidate?.candidateType === 'host') {
-              connectionType = 'Host (局域网)'
+      if (state === 'connected') {
+        // 延迟获取 stats 确保连接稳定
+        setTimeout(async () => {
+          if (!this.pc || this.pc.connectionState !== 'connected') return
+          
+          try {
+            const stats = await this.pc.getStats()
+            let connectionType = 'unknown'
+            let foundNominated = false
+            
+            stats.forEach(stat => {
+              // 只检查被提名（实际使用）的连接对
+              if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.nominated) {
+                const localCandidate = stats.get(stat.localCandidateId)
+                if (localCandidate) {
+                  connectionType = localCandidate.candidateType === 'relay' 
+                    ? 'TURN (中继)' 
+                    : localCandidate.candidateType === 'srflx' 
+                      ? 'STUN (P2P)' 
+                      : 'Host (局域网)'
+                  foundNominated = true
+                  console.log(`[${this.videoId}] ICE 候选类型: ${localCandidate.candidateType}`)
+                }
+              }
+            })
+            
+            // 如果没有找到 nominated 的 pair，记录警告
+            if (!foundNominated) {
+              console.warn(`[${this.videoId}] 未找到 nominated candidate pair`)
             }
+            
+            console.log(`[${this.videoId}] 🌐 连接类型: ${connectionType}`)
+            this.onConnected(connectionType)
+          } catch (error) {
+            console.error(`[${this.videoId}] 获取 stats 失败:`, error)
           }
-        })
-        console.log(`[${this.videoId}] 🌐 连接类型: ${connectionType}`)
-        // 传递连接类型给父组件
-        this.onConnected(connectionType)
+        }, 500)
       }
       
-      if (this.pc.connectionState === 'failed' || this.pc.connectionState === 'disconnected') {
-        console.error(`[${this.videoId}] WebRTC 连接失败,尝试重连...`)
+      if (state === 'failed' || state === 'disconnected') {
+        console.error(`[${this.videoId}] 连接失败,尝试重连...`)
+        
+        this.reconnectAttempts++
+        if (this.reconnectAttempts > this.maxReconnectAttempts) {
+          console.error(`[${this.videoId}] 重连次数过多,停止重连`)
+          this.cleanup()
+          this.onDisconnected()
+          return
+        }
+        
         // 5秒后重连
         setTimeout(() => {
           this.init()

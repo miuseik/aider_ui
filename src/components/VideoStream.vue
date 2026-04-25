@@ -5,6 +5,7 @@
         :id="videoId"
         autoplay 
         playsinline
+        muted
         class="robot-video"
       />
       <div class="video-status" v-if="!isConnected">等待连接...</div>
@@ -59,6 +60,8 @@ let manager = null
 
 // 初始化 WebRTC 连接
 function initWebRTC() {
+  console.log(`[${props.videoId}] 初始化 videoId WebRTC`)
+  console.log(`[${props.wsUrl}] 初始化 wsUrl WebRTC`)
   manager = new WebRTCVideoManager({
     videoId: props.videoId,
     wsUrl: props.wsUrl,
