@@ -1,5 +1,12 @@
 <template>
   <Layout>
+    <button 
+      class="connect-video-btn"
+      @click="toggleVideo"
+    >
+      {{ videoConnected ? '⏸ 断开' : '▶️ 连接视频' }}
+    </button>
+    
     <div class="vr-container" ref="sceneRef">
       <!-- A-Frame VR 场景 -->
       <a-scene vr-mode-ui="enabled: false;">
@@ -36,24 +43,6 @@
         
         <!-- 视频屏幕（3D 对象） -->
         <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
-        
-        <!-- 连接视频按钮（3D 对象） -->
-        <a-entity id="connectButton" position="0 0.8 -2" rotation="0 0 0">
-          <a-plane 
-            width="0.4" 
-            height="0.1" 
-            color="#00ff88"
-            opacity="0.8"
-            class="clickable"
-          >
-            <a-text 
-              value="📹 连接视频" 
-              align="center" 
-              width="0.35"
-              color="black"
-            ></a-text>
-          </a-plane>
-        </a-entity>
       </a-scene>
     </div>
   </Layout>
@@ -111,15 +100,6 @@ onMounted(() => {
     initDataPanel()
     initVideoScreen()  // 初始化视频屏幕
     setupRendererAnimationLoop()
-    setupConnectButton()  // 设置连接按钮
-    
-    // 1秒后自动触发连接
-    setTimeout(() => {
-      const buttonEntity = document.querySelector('#connectButton')
-      if (buttonEntity) {
-        buttonEntity.click()
-      }
-    }, 1000)
   }, 500)
 })
 
@@ -423,12 +403,10 @@ function connectVideo() {
     onConnected: () => {
       console.log('✅ VR 视频已连接')
       videoConnected = true
-      updateConnectButtonText('✅ 已连接')
     },
     onDisconnected: () => {
       console.log('❌ VR 视频已断开')
       videoConnected = false
-      updateConnectButtonText('📹 连接视频')
     },
     onError: (error) => {
       console.error('VR 视频错误:', error)
@@ -438,40 +416,19 @@ function connectVideo() {
   videoManager.init()
 }
 
-// 设置连接按钮
-function setupConnectButton() {
-  const buttonEntity = document.querySelector('#connectButton')
-  if (!buttonEntity) return
-  
-  // 添加点击事件
-  buttonEntity.addEventListener('click', () => {
-    console.log('点击连接视频按钮')
+// 切换视频连接
+function toggleVideo() {
+  if (videoConnected) {
+    // 断开连接
+    if (videoManager) {
+      videoManager.cleanup()
+      videoManager = null
+    }
+    videoConnected = false
+    console.log('⏸ 视频已断开')
+  } else {
+    // 连接视频
     connectVideo()
-  })
-  
-  // 添加悬停效果
-  buttonEntity.addEventListener('mouseenter', () => {
-    const plane = buttonEntity.querySelector('a-plane')
-    if (plane) {
-      plane.setAttribute('color', '#00ffaa')
-      plane.setAttribute('scale', '1.05 1.05 1')
-    }
-  })
-  
-  buttonEntity.addEventListener('mouseleave', () => {
-    const plane = buttonEntity.querySelector('a-plane')
-    if (plane) {
-      plane.setAttribute('color', '#00ff88')
-      plane.setAttribute('scale', '1 1 1')
-    }
-  })
-}
-
-// 更新按钮文本
-function updateConnectButtonText(text) {
-  const textEntity = document.querySelector('#connectButton a-text')
-  if (textEntity) {
-    textEntity.setAttribute('value', text)
   }
 }
 
@@ -732,5 +689,25 @@ function updateVideoScreenInFrame() {
   left: 0;
   overflow: hidden;
   z-index: 10;
+}
+
+.connect-video-btn {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #00ff88;
+  color: #00ff88;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 100;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(0, 255, 136, 0.2);
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+  }
 }
 </style>

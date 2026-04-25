@@ -10,16 +10,16 @@
       <div class="video-status" v-if="!isConnected">等待连接...</div>
       <div class="robot-label">{{ label }}</div>
       <div class="status-indicator" :class="{ online: isOnline }"></div>
+      
+      <!-- 播放按钮 - 左下角 -->
+      <button 
+        class="play-btn"
+        :disabled="!isOnline"
+        @click.stop="handleConnectClick"
+      >
+        {{ isConnected ? '⏸' : '▶️' }}
+      </button>
     </div>
-    
-    <!-- 连接视频按钮 -->
-    <button 
-      class="connect-video-btn"
-      :disabled="!isOnline"
-      @click="handleConnectClick"
-    >
-      {{ isConnected ? '✅ 已连接' : '📹 连接视频' }}
-    </button>
   </div>
 </template>
 
@@ -163,6 +163,35 @@ onUnmounted(() => {
   &.online {
     background: #00ff88;
     box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+  }
+}
+
+.play-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  
+  &:hover:not(:disabled) {
+    background: rgba(0, 255, 136, 0.8);
+    border-color: #00ff88;
+    transform: scale(1.1);
+  }
+  
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 }
 </style>
