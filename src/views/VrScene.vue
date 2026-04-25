@@ -36,6 +36,24 @@
         
         <!-- 视频屏幕（3D 对象） -->
         <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
+        
+        <!-- 连接视频按钮（3D 对象） -->
+        <a-entity id="connectButton" position="0 0.8 -2" rotation="0 0 0">
+          <a-plane 
+            width="0.4" 
+            height="0.1" 
+            color="#00ff88"
+            opacity="0.8"
+            class="clickable"
+          >
+            <a-text 
+              value="📹 连接视频" 
+              align="center" 
+              width="0.35"
+              color="black"
+            ></a-text>
+          </a-plane>
+        </a-entity>
       </a-scene>
     </div>
   </Layout>
@@ -48,8 +66,8 @@ import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
 import controllerManager from '../utils/controllerManager.js'
+import { WebRTCVideoManager } from '../utils/webRTCManager'
 import Layout from '../components/Layout.vue'
-import VideoStream from '../components/VideoStream.vue'
 
 const sceneRef = ref(null)
 let dataPanelMesh = null
@@ -60,12 +78,17 @@ let animationId = null
 // 视频屏幕相关
 let videoScreenMesh = null
 let videoElement = null
+let videoManager = null
+
+// WebSocket URL
+const WS_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
 
 // 手柄状态
 let leftGripDown = false
 let rightGripDown = false
 let leftTriggerDown = false
 let rightTriggerDown = false
+let videoConnected = false
 
 // 相对旋转跟踪
 let leftGripInitialRotation = null
@@ -88,6 +111,15 @@ onMounted(() => {
     initDataPanel()
     initVideoScreen()  // 初始化视频屏幕
     setupRendererAnimationLoop()
+    setupConnectButton()  // 设置连接按钮
+    
+    // 1秒后自动触发连接
+    setTimeout(() => {
+      const buttonEntity = document.querySelector('#connectButton')
+      if (buttonEntity) {
+        buttonEntity.click()
+      }
+    }, 1000)
   }, 500)
 })
 
@@ -99,6 +131,12 @@ onUnmounted(() => {
   
   // 清理事件监听器
   cleanupEventListeners()
+  
+  // 清理 WebRTC 连接
+  if (videoManager) {
+    videoManager.cleanup()
+    videoManager = null
+  }
 })
 
 
@@ -373,6 +411,68 @@ function initVideoScreen() {
   // 创建网格并添加到实体
   videoScreenMesh = new THREE.Mesh(geometry, material)
   videoScreenEntity.object3D.add(videoScreenMesh)
+}
+
+// 连接视频
+function connectVideo() {
+  if (videoConnected) return  // 已连接则忽略
+  
+  videoManager = new WebRTCVideoManager({
+    videoId: 'video-screen-video',
+    wsUrl: WS_URL,
+    onConnected: () => {
+      console.log('✅ VR 视频已连接')
+      videoConnected = true
+      updateConnectButtonText('✅ 已连接')
+    },
+    onDisconnected: () => {
+      console.log('❌ VR 视频已断开')
+      videoConnected = false
+      updateConnectButtonText('📹 连接视频')
+    },
+    onError: (error) => {
+      console.error('VR 视频错误:', error)
+    }
+  })
+  
+  videoManager.init()
+}
+
+// 设置连接按钮
+function setupConnectButton() {
+  const buttonEntity = document.querySelector('#connectButton')
+  if (!buttonEntity) return
+  
+  // 添加点击事件
+  buttonEntity.addEventListener('click', () => {
+    console.log('点击连接视频按钮')
+    connectVideo()
+  })
+  
+  // 添加悬停效果
+  buttonEntity.addEventListener('mouseenter', () => {
+    const plane = buttonEntity.querySelector('a-plane')
+    if (plane) {
+      plane.setAttribute('color', '#00ffaa')
+      plane.setAttribute('scale', '1.05 1.05 1')
+    }
+  })
+  
+  buttonEntity.addEventListener('mouseleave', () => {
+    const plane = buttonEntity.querySelector('a-plane')
+    if (plane) {
+      plane.setAttribute('color', '#00ff88')
+      plane.setAttribute('scale', '1 1 1')
+    }
+  })
+}
+
+// 更新按钮文本
+function updateConnectButtonText(text) {
+  const textEntity = document.querySelector('#connectButton a-text')
+  if (textEntity) {
+    textEntity.setAttribute('value', text)
+  }
 }
 
 // 设置 renderer 的 animation loop
