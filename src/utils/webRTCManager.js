@@ -61,24 +61,27 @@ export class WebRTCVideoManager {
     // 创建 RTCPeerConnection
     this.pc = new RTCPeerConnection({
       iceServers: [
+        // Google STUN (最稳定)
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
         // 国内 STUN
-        // { urls: 'stun:stun.miwifi.com:3478' },
-        // { urls: 'stun:stun.qq.com:3478' },
-        // { urls: 'stun:stun.bige0.com:3391' },
-        // 自建 TURN 服务器 (强制中继)
+        { urls: 'stun:stun.miwifi.com:3478' },
+        { urls: 'stun:stun.qq.com:3478' },
+        { urls: 'stun:stun.bige0.com:3391' },
+        // 自建 TURN 服务器
         {
-          urls: 'turn:121.40.151.10:3478',
+          urls: 'turn:ws.houqicg.com:3478',
           username: 'aider',
           credential: 'aider123456'
         },
         {
-          urls: 'turns:121.40.151.10:5349',
+          urls: 'turns:ws.houqicg.com:5349',
           username: 'aider',
           credential: 'aider123456'
         }
       ],
-      iceCandidatePoolSize: 10,  // ICE 候选池大小
-      iceTransportPolicy: 'relay'  // 强制使用 TURN 中继
+      iceCandidatePoolSize: 10  // ICE 候选池大小
     })
     
     // 处理远程视频流
@@ -87,9 +90,9 @@ export class WebRTCVideoManager {
       const video = document.getElementById(this.videoId)
       if (video && event.streams[0]) {
         video.srcObject = event.streams[0]
-        console.log('✅ 视频已连接',event.streams)
+        console.log(`[${this.videoId}] ✅ 视频已连接`)
         this.isConnected = true
-        // 不立即调用 onConnected,等待 stats 判断完成
+        this.onConnected()
         
         // 监听视频播放状态
         video.onplay = () => {
@@ -118,60 +121,10 @@ export class WebRTCVideoManager {
     }
     
     // 监听连接状态变化
-    this.pc.onconnectionstatechange = async () => {
-      const state = this.pc?.connectionState
-      console.log(`[${this.videoId}] WebRTC 状态: ${state}`)
-      
-      if (state === 'connected') {
-        // 延迟获取 stats 确保连接稳定
-        setTimeout(async () => {
-          if (!this.pc || this.pc.connectionState !== 'connected') return
-          
-          try {
-            const stats = await this.pc.getStats()
-            let connectionType = 'unknown'
-            let foundNominated = false
-            
-            stats.forEach(stat => {
-              // 只检查被提名（实际使用）的连接对
-              if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.nominated) {
-                const localCandidate = stats.get(stat.localCandidateId)
-                if (localCandidate) {
-                  connectionType = localCandidate.candidateType === 'relay' 
-                    ? 'TURN (中继)' 
-                    : localCandidate.candidateType === 'srflx' 
-                      ? 'STUN (P2P)' 
-                      : 'Host (局域网)'
-                  foundNominated = true
-                  console.log(`[${this.videoId}] ICE 候选类型: ${localCandidate.candidateType}`)
-                }
-              }
-            })
-            
-            // 如果没有找到 nominated 的 pair，记录警告
-            if (!foundNominated) {
-              console.warn(`[${this.videoId}] 未找到 nominated candidate pair`)
-            }
-            
-            console.log(`[${this.videoId}] 🌐 连接类型: ${connectionType}`)
-            this.onConnected(connectionType)
-          } catch (error) {
-            console.error(`[${this.videoId}] 获取 stats 失败:`, error)
-          }
-        }, 500)
-      }
-      
-      if (state === 'failed' || state === 'disconnected') {
-        console.error(`[${this.videoId}] 连接失败,尝试重连...`)
-        
-        this.reconnectAttempts++
-        if (this.reconnectAttempts > this.maxReconnectAttempts) {
-          console.error(`[${this.videoId}] 重连次数过多,停止重连`)
-          this.cleanup()
-          this.onDisconnected()
-          return
-        }
-        
+    this.pc.onconnectionstatechange = () => {
+      console.log(`[${this.videoId}] WebRTC 连接状态:`, this.pc.connectionState)
+      if (this.pc.connectionState === 'failed' || this.pc.connectionState === 'disconnected') {
+        console.error(`[${this.videoId}] WebRTC 连接失败,尝试重连...`)
         // 5秒后重连
         setTimeout(() => {
           this.init()
