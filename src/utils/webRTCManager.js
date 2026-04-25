@@ -58,22 +58,18 @@ export class WebRTCVideoManager {
     // 创建 RTCPeerConnection
     this.pc = new RTCPeerConnection({
       iceServers: [
-        // Google STUN (最稳定)
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
         // 国内 STUN
         { urls: 'stun:stun.miwifi.com:3478' },
         { urls: 'stun:stun.qq.com:3478' },
         { urls: 'stun:stun.bige0.com:3391' },
         // 自建 TURN 服务器
         {
-          urls: 'turn:ws.houqicg.com:3478',
+          urls: 'turn:121.40.151.10:3478',
           username: 'aider',
           credential: 'aider123456'
         },
         {
-          urls: 'turns:ws.houqicg.com:5349',
+          urls: 'turns:121.40.151.10:5349',
           username: 'aider',
           credential: 'aider123456'
         }
