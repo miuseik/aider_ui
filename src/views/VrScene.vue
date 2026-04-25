@@ -1,5 +1,6 @@
 <template>
   <Layout>
+    <!-- 连接/断开视频按钮 -->
     <button 
       class="connect-video-btn"
       @click="toggleVideo"
@@ -7,41 +8,52 @@
       {{ videoConnected ? '⏸ 断开' : '▶️ 连接视频' }}
     </button>
     
+    <!-- 调试:显示视频元素到屏幕左上角 -->
+<!--    <button -->
+<!--      class="debug-video-btn"-->
+<!--      @click="showDebugVideo"-->
+<!--    >-->
+<!--      🔍 显示视频-->
+<!--    </button>-->
+    
     <div class="vr-container" ref="sceneRef">
-      <!-- A-Frame VR 场景 -->
-      <a-scene vr-mode-ui="enabled: false;">
-        <!-- Passthrough setup -->
+      <!-- A-Frame VR 场景根节点,隐藏默认VR按钮 -->
+      <a-scene vr-mode-ui="enabled: true;">
+        <!-- 开启透视模式(MR混合现实),能看到真实环境+虚拟内容 -->
         <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
 
-        <!-- Controllers -->
+        <!-- 左手控制器(追踪 Meta Quest 左手柄位置和按键) -->
         <a-entity id="leftHand" oculus-touch-controls="hand: left">
+          <!-- 手柄上显示的文本信息(位置/旋转数据),相对手柄:上方4cm,前方5cm,缩小到5% -->
           <a-text 
             id="leftHandInfo" 
             value="Pos: ...\nRot: ..." 
-            position="0 0.04 -0.05" 
-            rotation="0 0 0" 
-            scale="0.05 0.05 0.05" 
-            color="white" 
+            position="0 0.04 -0.05"
+            rotation="0 0 0"
+            scale="0.05 0.05 0.05"
+            color="white"
             align="center"
           ></a-text>
         </a-entity>
         
+        <!-- 右手控制器(追踪 Meta Quest 右手柄位置和按键) -->
         <a-entity id="rightHand" oculus-touch-controls="hand: right">
+          <!-- 手柄上显示的文本信息(位置/旋转数据),相对手柄:上方4cm,前方5cm,缩小到5% -->
           <a-text 
             id="rightHandInfo" 
             value="Pos: ...\nRot: ..." 
-            position="0 0.04 -0.05" 
-            rotation="0 0 0" 
-            scale="0.05 0.05 0.05" 
-            color="white" 
+            position="0 0.04 -0.05"
+            rotation="0 0 0"
+            scale="0.05 0.05 0.05"
+            color="white"
             align="center"
           ></a-text>
         </a-entity>
         
-        <!-- 数据中心面板（作为 3D 对象添加到场景中） -->
+        <!-- 数据中心面板容器(显示VR数据的3D屏幕,在面前1.5米处,向下倾斜15度) -->
         <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
         
-        <!-- 视频屏幕（3D 对象） -->
+        <!-- 视频屏幕容器(WebRTC视频将映射到这里,在头顶1.5米,前方2米处) -->
         <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
       </a-scene>
     </div>
@@ -49,61 +61,66 @@
 </template>
 
 <script setup>
+// ========== 导入依赖 ==========
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three'
-import { wsClient } from '../utils/websocket.js'
-import { getFullVRData, getButtonName } from '../utils/vrData.js'
-import { createAxisIndicators } from '../utils/vrHelpers.js'
-import controllerManager from '../utils/controllerManager.js'
-import { WebRTCVideoManager } from '../utils/webRTCManager'
-import Layout from '../components/Layout.vue'
+import { wsClient } from '../utils/websocket.js'           // WebSocket 客户端
+import { getFullVRData, getButtonName } from '../utils/vrData.js'  // VR 数据工具
+import { createAxisIndicators } from '../utils/vrHelpers.js'       // 坐标轴指示器
+import { WebRTCVideoManager } from '../utils/webRTCManager'        // WebRTC 管理器
+import Layout from '../components/Layout.vue'                      // 布局组件
 
-const sceneRef = ref(null)
-let dataPanelMesh = null
-let dataPanelContext = null
-let dataPanelTexture = null
-let animationId = null
+// ========== 响应式变量 ==========
+const sceneRef = ref(null)  // A-Frame 场景引用
+
+// 数据中心面板相关
+let dataPanelMesh = null         // 3D 网格对象
+let dataPanelContext = null      // Canvas 2D 上下文
+let dataPanelTexture = null      // Canvas 纹理
+let animationId = null           // 动画帧 ID
 
 // 视频屏幕相关
-let videoScreenMesh = null
-let videoElement = null
-let videoManager = null
+let videoScreenMesh = null       // 视频 3D 网格
+let videoElement = null          // HTML video 元素
+let videoManager = null          // WebRTC 管理器实例
 
-// WebSocket URL
+// WebSocket URL (从环境变量读取)
 const WS_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
 
-// 手柄状态
-let leftGripDown = false
-let rightGripDown = false
-let leftTriggerDown = false
-let rightTriggerDown = false
-let videoConnected = false
+// ========== 手柄状态 ==========
+let leftGripDown = false       // 左手握把按下
+let rightGripDown = false      // 右手握把按下
+let leftTriggerDown = false    // 左手扳机按下
+let rightTriggerDown = false   // 右手扳机按下
+let videoConnected = false     // 视频是否已连接
 
-// 相对旋转跟踪
-let leftGripInitialRotation = null
-let rightGripInitialRotation = null
-let leftRelativeRotation = { x: 0, y: 0, z: 0 }
-let rightRelativeRotation = { x: 0, y: 0, z: 0 }
+// 相对旋转跟踪(用于计算握把按下时的相对角度变化)
+let leftGripInitialRotation = null      // 左手初始旋转
+let rightGripInitialRotation = null     // 右手初始旋转
+let leftRelativeRotation = { x: 0, y: 0, z: 0 }   // 左手相对旋转
+let rightRelativeRotation = { x: 0, y: 0, z: 0 }  // 右手相对旋转
 
-// Z 轴旋转跟踪
-let leftGripInitialQuaternion = null
-let rightGripInitialQuaternion = null
-let leftZAxisRotation = 0
-let rightZAxisRotation = 0
+// Z 轴旋转跟踪(绕前向轴的旋转角度)
+let leftGripInitialQuaternion = null    // 左手初始四元数
+let rightGripInitialQuaternion = null   // 右手初始四元数
+let leftZAxisRotation = 0               // 左手 Z 轴旋转角度
+let rightZAxisRotation = 0              // 右手 Z 轴旋转角度
 
+// ========== 生命周期钩子 ==========
 onMounted(() => {
   console.log('进入了沉浸模式')
 
   // 等待 A-Frame 场景初始化
   setTimeout(() => {
-    initControllerUpdater()
-    initDataPanel()
-    initVideoScreen()  // 初始化视频屏幕
-    setupRendererAnimationLoop()
+    initControllerUpdater()      // 初始化手柄控制器(监听按键、创建坐标轴指示器)
+    initDataPanel()              // 初始化数据中心面板(CanvasTexture显示VR数据)
+    initVideoScreen()            // 初始化视频屏幕(WebRTC视频映射到3D平面)
+    setupRendererAnimationLoop() // 设置渲染循环(每帧更新数据面板和视频纹理)
   }, 500)
 })
 
 onUnmounted(() => {
+  // 停止渲染循环
   const sceneEl = document.querySelector('a-scene')
   if (sceneEl && sceneEl.renderer) {
     sceneEl.renderer.setAnimationLoop(null)
@@ -119,8 +136,8 @@ onUnmounted(() => {
   }
 })
 
-
-// 初始化工具函数
+// ========== 工具函数 ==========
+// 计算相对旋转(当前旋转 - 初始旋转)
 function calculateRelativeRotation(currentRotation, initialRotation) {
   return {
     x: currentRotation.x - initialRotation.x,
@@ -129,6 +146,7 @@ function calculateRelativeRotation(currentRotation, initialRotation) {
   }
 }
 
+// 计算绕 Z 轴(前向轴)的旋转角度
 function calculateZAxisRotation(currentQuaternion, initialQuaternion) {
   const relativeQuat = new THREE.Quaternion()
   relativeQuat.multiplyQuaternions(currentQuaternion, initialQuaternion.clone().invert())
@@ -156,19 +174,22 @@ function calculateZAxisRotation(currentQuaternion, initialQuaternion) {
   return degrees
 }
 
+// 发送握把释放信号到后端
 function sendGripRelease(hand) {
   if (wsClient.isConnected) {
     wsClient.send(JSON.stringify({ hand, gripReleased: true }))
   }
 }
 
+// 发送扳机释放信号到后端
 function sendTriggerRelease(hand) {
   if (wsClient.isConnected) {
     wsClient.send(JSON.stringify({ hand, triggerReleased: true }))
   }
 }
 
-// 设置事件监听器
+// ========== 事件监听器 ==========
+// 设置手柄事件监听器(trigger/grip 按下/释放)
 function setupEventListeners(leftHand, rightHand) {
   // 左手事件
   leftHand.addEventListener('triggerdown', () => {
@@ -180,6 +201,7 @@ function setupEventListeners(leftHand, rightHand) {
   })
   leftHand.addEventListener('gripdown', () => {
     leftGripDown = true
+    // 记录握把按下时的初始旋转
     if (leftHand.object3D.visible) {
       const rot = leftHand.object3D.rotation
       leftGripInitialRotation = {
@@ -192,6 +214,7 @@ function setupEventListeners(leftHand, rightHand) {
   })
   leftHand.addEventListener('gripup', () => {
     leftGripDown = false
+    // 重置初始值
     leftGripInitialRotation = null
     leftGripInitialQuaternion = null
     leftRelativeRotation = { x: 0, y: 0, z: 0 }
@@ -199,7 +222,7 @@ function setupEventListeners(leftHand, rightHand) {
     sendGripRelease('left')
   })
   
-  // 右手事件
+  // 右手事件(同左手)
   rightHand.addEventListener('triggerdown', () => {
     rightTriggerDown = true
   })
@@ -229,6 +252,7 @@ function setupEventListeners(leftHand, rightHand) {
   })
 }
 
+// 清理事件监听器
 function cleanupEventListeners() {
   const leftHand = document.querySelector('#leftHand')
   const rightHand = document.querySelector('#rightHand')
@@ -236,7 +260,8 @@ function cleanupEventListeners() {
   if (rightHand) rightHand.removeEventListener('gripdown', null)
 }
 
-// 初始化控制器更新器
+// ========== 初始化函数 ==========
+// 初始化控制器更新器(设置文本旋转、创建坐标轴、绑定事件)
 function initControllerUpdater() {
   const leftHand = document.querySelector('#leftHand')
   const rightHand = document.querySelector('#rightHand')
@@ -248,12 +273,12 @@ function initControllerUpdater() {
     return
   }
   
-  // 应用初始旋转
+  // 应用初始旋转(让文本朝向用户)
   const textRotation = '-90 0 0'
   leftHandInfoText.setAttribute('rotation', textRotation)
   rightHandInfoText.setAttribute('rotation', textRotation)
   
-  // 创建坐标轴指示器
+  // 创建坐标轴指示器(XYZ 轴可视化)
   createAxisIndicators(leftHand, '左')
   createAxisIndicators(rightHand, '右')
   
@@ -261,8 +286,10 @@ function initControllerUpdater() {
   setupEventListeners(leftHand, rightHand)
 }
 
-// 发送 VR 数据到后端
+// ========== 数据发送 ==========
+// 发送 VR 数据到后端(头显+双手柄的位置/旋转/按键)
 function sendVRData(vrData) {
+  // 只在握把按下且 WebSocket 连接时发送
   if (!(leftGripDown || rightGripDown) || !wsClient.isConnected || !vrData) {
     return
   }
@@ -280,7 +307,6 @@ function sendVRData(vrData) {
       gripActive: leftGripDown,
       trigger: vrData.leftController.buttons[0]?.value || 0,
       joystick: vrData.leftController.joystick,
-      // buttons: vrData.leftController.buttons
     } : {
       hand: 'left',
       position: { x: 0, y: 0, z: 0 },
@@ -288,7 +314,6 @@ function sendVRData(vrData) {
       gripActive: false,
       trigger: 0,
       joystick: { x: 0, y: 0 },
-      // buttons: []
     },
     rightController: vrData?.rightController ? {
       hand: 'right',
@@ -297,7 +322,6 @@ function sendVRData(vrData) {
       gripActive: rightGripDown,
       trigger: vrData.rightController.buttons[0]?.value || 0,
       joystick: vrData.rightController.joystick,
-      // buttons: vrData.rightController.buttons
     } : {
       hand: 'right',
       position: { x: 0, y: 0, z: 0 },
@@ -305,14 +329,13 @@ function sendVRData(vrData) {
       gripActive: false,
       trigger: 0,
       joystick: { x: 0, y: 0 },
-      // buttons: []
     }
   }
   
   wsClient.send(JSON.stringify(dualControllerData))
 }
 
-// 重启系统
+// 重启系统(调用后端 API,5秒后刷新页面)
 async function restartSystem() {
   try {
     await fetch('/api/restart', {
@@ -330,12 +353,13 @@ async function restartSystem() {
   }
 }
 
-// 初始化数据面板（创建 3D 对象）
+// ========== 3D 对象初始化 ==========
+// 初始化数据面板(创建 CanvasTexture 显示 VR 数据)
 function initDataPanel() {
   const dataPanelEntity = document.querySelector('#dataPanel')
   if (!dataPanelEntity) return
   
-  // 创建 canvas
+  // 创建高分辨率 canvas (3840x1200)
   const canvas = document.createElement('canvas')
   canvas.width = 3840
   canvas.height = 1200
@@ -347,55 +371,47 @@ function initDataPanel() {
   dataPanelTexture.minFilter = THREE.LinearFilter
   dataPanelTexture.magFilter = THREE.LinearFilter
   
-  // 创建几何体和材质
+  // 创建几何体和材质(3.0m x 0.95m 平面)
   const geometry = new THREE.PlaneGeometry(3.0, 0.95)
   const material = new THREE.MeshBasicMaterial({
     map: dataPanelTexture,
     side: THREE.DoubleSide,
     transparent: true,
-    depthTest: false,
+    depthTest: false,   // 禁用深度测试,始终显示在最前
     depthWrite: false
   })
   
   // 创建网格并添加到实体
   dataPanelMesh = new THREE.Mesh(geometry, material)
-  dataPanelMesh.renderOrder = 1000
+  dataPanelMesh.renderOrder = 1000  // 高渲染优先级
   dataPanelEntity.object3D.add(dataPanelMesh)
 }
 
-// 初始化视频屏幕（创建 3D 对象）
+// 初始化视频屏幕(创建 VideoTexture 显示 WebRTC 视频)
 function initVideoScreen() {
   const videoScreenEntity = document.querySelector('#videoScreen')
   if (!videoScreenEntity) return
   
-  // 创建 video 元素
+  // 创建 video 元素(隐藏,仅作为纹理源)
   videoElement = document.createElement('video')
   videoElement.id = 'video-screen-video'
   videoElement.autoplay = true
   videoElement.playsInline = true
-  videoElement.style.display = 'none'  // 隐藏 DOM 中的 video
+  // videoElement.style.display = 'none'  // 隐藏 DOM 中的 video
   document.body.appendChild(videoElement)
   
-  // 创建纹理（使用 video 作为源）
-  const videoTexture = new THREE.VideoTexture(videoElement)
-  videoTexture.minFilter = THREE.LinearFilter
-  videoTexture.magFilter = THREE.LinearFilter
-  
-  // 创建几何体和材质
-  const geometry = new THREE.PlaneGeometry(1.6, 0.9)  // 16:9 比例
-  const material = new THREE.MeshBasicMaterial({
-    map: videoTexture,
-    side: THREE.DoubleSide
-  })
-  
-  // 创建网格并添加到实体
-  videoScreenMesh = new THREE.Mesh(geometry, material)
+  // 创建视频屏幕 3D 网格(1.6m x 0.9m)
+  const { mesh, texture } = createVideoScreen(videoElement)
+  videoScreenMesh = mesh
   videoScreenEntity.object3D.add(videoScreenMesh)
 }
 
-// 连接视频
+// ========== 视频控制 ==========
+// 连接视频(初始化 WebRTC)
 function connectVideo() {
   if (videoConnected) return  // 已连接则忽略
+  
+  console.log('🎬 开始连接 VR 视频...')
   
   videoManager = new WebRTCVideoManager({
     videoId: 'video-screen-video',
@@ -403,6 +419,16 @@ function connectVideo() {
     onConnected: () => {
       console.log('✅ VR 视频已连接')
       videoConnected = true
+      
+      // 视频连接后,重新绑定纹理确保更新
+      setTimeout(() => {
+        if (videoScreenMesh && videoElement) {
+          const { texture } = createVideoScreen(videoElement)
+          videoScreenMesh.material.map = texture
+          videoScreenMesh.material.needsUpdate = true
+          console.log('🔄 视频纹理已重新绑定')
+        }
+      }, 100)
     },
     onDisconnected: () => {
       console.log('❌ VR 视频已断开')
@@ -416,7 +442,7 @@ function connectVideo() {
   videoManager.init()
 }
 
-// 切换视频连接
+// 切换视频连接(连接/断开)
 function toggleVideo() {
   if (videoConnected) {
     // 断开连接
@@ -432,7 +458,22 @@ function toggleVideo() {
   }
 }
 
-// 设置 renderer 的 animation loop
+// 调试:显示视频元素到屏幕左上角(检查视频流是否正常)
+function showDebugVideo() {
+  const video = document.getElementById('video-screen-video')
+  if (video) {
+    video.style.display = 'block'
+    video.style.position = 'fixed'
+    video.style.top = '100px'
+    video.style.width = '100%'
+    video.style.height = '480px'
+    video.style.zIndex = '9999'
+    console.log('🔍 视频元素已显示')
+  }
+}
+
+// ========== 渲染循环 ==========
+// 设置 renderer 的 animation loop(进入 VR 后每帧更新)
 function setupRendererAnimationLoop() {
   const sceneEl = document.querySelector('a-scene')
   if (!sceneEl || !sceneEl.renderer) return
@@ -464,7 +505,7 @@ function setupRendererAnimationLoop() {
   })
 }
 
-// 更新相对旋转
+// 更新相对旋转(在握把按下时计算相对于初始角度的变化)
 function updateRelativeRotation() {
   const leftHand = document.querySelector('#leftHand')
   const rightHand = document.querySelector('#rightHand')
@@ -500,7 +541,7 @@ function updateRelativeRotation() {
     }
   }
   
-  // 右手相对旋转
+  // 右手相对旋转(同左手)
   if (rightGripDown && rightGripInitialRotation && rightHand.object3D.visible) {
     const rot = rightHand.object3D.rotation
     const currentRot = {
@@ -528,7 +569,7 @@ function updateRelativeRotation() {
   }
 }
 
-// 在 WebXR frame 中更新数据面板
+// 在 WebXR frame 中更新数据面板(每帧绘制 Canvas)
 function updateDataPanelInFrame(time, frame, referenceSpace, session) {
   if (!dataPanelContext || !dataPanelTexture) return
   if (!frame || !referenceSpace || !session) return
@@ -539,11 +580,11 @@ function updateDataPanelInFrame(time, frame, referenceSpace, session) {
   // 清空画布
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   
-  // 背景
+  // 背景(半透明黑色)
   ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   
-  // 边框
+  // 边框(青色)
   ctx.strokeStyle = '#00ffff'
   ctx.lineWidth = 8
   ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20)
@@ -554,7 +595,7 @@ function updateDataPanelInFrame(time, frame, referenceSpace, session) {
   ctx.textAlign = 'center'
   ctx.fillText('◈ DATA CENTER ◈', canvas.width / 2, 90)
   
-  // 获取完整的 VR 数据
+  // 获取完整的 VR 数据(从头显和手柄读取)
   const sceneEl = document.querySelector('a-scene')
   const vrData = getFullVRData(sceneEl, frame)
   
@@ -588,15 +629,15 @@ function updateDataPanelInFrame(time, frame, referenceSpace, session) {
   // 显示右手柄数据
   displayControllerData(ctx, canvas, vrData?.rightController, 'right', canvas.width - 100)
   
-  // 更新纹理
+  // 更新纹理(通知 Three.js 重新渲染)
   dataPanelTexture.needsUpdate = true
 }
 
-// 显示单个手柄数据
+// 显示单个手柄数据(位置/旋转/摇杆/按钮)
 function displayControllerData(ctx, canvas, controller, hand, xPos) {
   const isLeft = hand === 'left'
   
-  // 标题
+  // 标题(LEFT/RIGHT)
   ctx.textAlign = isLeft ? 'left' : 'right'
   ctx.fillStyle = isLeft ? '#00ff88' : '#ff6688'
   ctx.font = 'bold 65px monospace'
@@ -612,7 +653,7 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
     ctx.fillText(isLeft ? '未检测到左手柄' : '未检测到右手柄', xPos, 210)
     return
   }
-  // 检测左手 menu 键 (button 12)
+  // 检测左手 menu 键 (button 12),按下后重启系统
   if (controller.buttons[12]?.pressed) {
     restartSystem()
     return
@@ -642,7 +683,7 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   ctx.fillText(`JOY: ${joyX}, ${joyY}`, xPos, 310)
   ctx.shadowBlur = 0
   
-  // 按钮信息
+  // 按钮信息(遍历所有按钮,根据值显示不同颜色)
   ctx.fillStyle = '#ffffff'
   ctx.font = '45px monospace'
   
@@ -653,7 +694,7 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
     const value = btn.value.toFixed(2)
     const text = `${name}: ${value}`
     
-    // 根据值设置颜色
+    // 根据值设置颜色(>0.5 橙色, >0 黄色, =0 灰色)
     if (btn.value > 0.5) {
       ctx.fillStyle = '#ff6600'
       ctx.shadowBlur = 20
@@ -673,10 +714,30 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   ctx.shadowBlur = 0
 }
 
-// 在 WebXR frame 中更新视频屏幕
-// WebRTC 视频直接通过 video 标签显示，无需手动更新
+// ========== 工具函数 ==========
+// 简化的视频屏幕创建函数(将 video 元素转为 3D 网格)
+function createVideoScreen(videoElement, width = 1.6, height = 0.9) {
+  const texture = new THREE.VideoTexture(videoElement)
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+  )
+  
+  return { mesh, texture }
+}
+
+// 在 WebXR frame 中更新视频屏幕(每帧更新纹理)
 function updateVideoScreenInFrame() {
-  // WebRTC 自动处理视频流，此函数保留为空
+  // 更新视频纹理
+  if (videoScreenMesh && videoScreenMesh.material) {
+    const texture = videoScreenMesh.material.map
+    if (texture && texture.image) {
+      texture.needsUpdate = true
+    }
+  }
 }
 </script>
 
@@ -708,6 +769,26 @@ function updateVideoScreenInFrame() {
   &:hover {
     background: rgba(0, 255, 136, 0.2);
     box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+  }
+}
+
+.debug-video-btn {
+  position: fixed;
+  bottom: 20px;
+  left: 160px;
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #ff6600;
+  color: #ff6600;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 100;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(255, 102, 0, 0.2);
+    box-shadow: 0 0 20px rgba(255, 102, 0, 0.5);
   }
 }
 </style>

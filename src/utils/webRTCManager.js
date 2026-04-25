@@ -122,6 +122,11 @@ export class WebRTCVideoManager {
     
     // 监听信令消息
     this.messageHandler = (data) => {
+      if (!this.pc) {
+        console.warn(`[${this.videoId}] ⚠️ PeerConnection 未初始化,忽略消息`)
+        return
+      }
+      
       if (data.type === 'offer') {
         this.pc.setRemoteDescription(new RTCSessionDescription(data))
           .then(() => this.pc.createAnswer())
@@ -137,7 +142,7 @@ export class WebRTCVideoManager {
       }
     }
     
-    wsClient.onMessage(this.messageHandler)
+    this.removeMessageHandler = wsClient.onMessage(this.messageHandler)
   }
 
   /**
@@ -149,8 +154,9 @@ export class WebRTCVideoManager {
       this.pc = null
     }
     // 移除消息监听器
-    if (this.messageHandler && wsClient) {
-      // wsClient 没有 removeMessageHandler,暂时不处理
+    if (this.removeMessageHandler) {
+      this.removeMessageHandler()
+      this.removeMessageHandler = null
     }
     this.isConnected = false
   }
