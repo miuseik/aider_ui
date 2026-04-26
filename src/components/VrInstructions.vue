@@ -28,13 +28,13 @@
                 :min="-180"
                 :max="180"
                 :step="0.1"
-                @change="(val) => controlMotor('left', motor.name, val)"
+                @change="(val) => controlMotorHandler('left', motor.name, val)"
               />
               <el-button 
                 size="small" 
                 type="primary"
                 :loading="calibrating[motor.name]"
-                @click="calibrateMotor('left', motor.name)"
+                @click="calibrateMotorHandler('left', motor.name)"
               >
                 校准零点
               </el-button>
@@ -66,13 +66,13 @@
                 :min="-180"
                 :max="180"
                 :step="0.1"
-                @change="(val) => controlMotor('right', motor.name, val)"
+                @change="(val) => controlMotorHandler('right', motor.name, val)"
               />
               <el-button 
                 size="small" 
                 type="primary"
                 :loading="calibrating[motor.name]"
-                @click="calibrateMotor('right', motor.name)"
+                @click="calibrateMotorHandler('right', motor.name)"
               >
                 校准零点
               </el-button>
@@ -102,7 +102,7 @@
                 :min="-100"
                 :max="100"
                 :step="1"
-                @change="(val) => controlChassis('left', val)"
+                @change="(val) => controlChassisHandler('left', val)"
               />
               <div class="direction-controls">
                 <el-button size="small" @click="setDirection('left', -1)">◀ 反转</el-button>
@@ -121,7 +121,7 @@
                 :min="-100"
                 :max="100"
                 :step="1"
-                @change="(val) => controlChassis('rear', val)"
+                @change="(val) => controlChassisHandler('rear', val)"
               />
               <div class="direction-controls">
                 <el-button size="small" @click="setDirection('rear', -1)">◀ 反转</el-button>
@@ -140,7 +140,7 @@
                 :min="-100"
                 :max="100"
                 :step="1"
-                @change="(val) => controlChassis('right', val)"
+                @change="(val) => controlChassisHandler('right', val)"
               />
               <div class="direction-controls">
                 <el-button size="small" @click="setDirection('right', -1)">◀ 反转</el-button>
@@ -159,7 +159,7 @@
                 :min="-100"
                 :max="100"
                 :step="1"
-                @change="(val) => controlLift(val)"
+                @change="(val) => controlLiftHandler(val)"
               />
               <div class="direction-controls">
                 <el-button size="small" @click="setLiftDirection(-1)">▼ 下降</el-button>
@@ -200,7 +200,7 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import { controlMotor, calibrateMotor, controlChassis, controlLift } from '@/api/motorControl'
 
 const props = defineProps({
   status: {
@@ -238,25 +238,18 @@ const liftSpeed = ref(0)
 const calibrating = ref({})
 
 // 控制电机角度
-async function controlMotor(arm, motorName, angle) {
+async function controlMotorHandler(arm, motorName, angle) {
   try {
-    await axios.post('/api/control_motor', {
-      arm,
-      motor: motorName,
-      angle: angle
-    })
+    await controlMotor(arm, motorName, angle)
   } catch (error) {
     console.error(`控制电机失败: ${error.message}`)
   }
 }
 
 // 控制底盘速度
-async function controlChassis(wheel, speed) {
+async function controlChassisHandler(wheel, speed) {
   try {
-    await axios.post('/api/control_chassis', {
-      wheel,
-      speed: speed
-    })
+    await controlChassis(wheel, speed)
   } catch (error) {
     console.error(`控制底盘失败: ${error.message}`)
   }
@@ -271,15 +264,13 @@ async function setDirection(wheel, direction) {
   }
   // 使用当前滑块的速度，只改变方向
   const speed = direction * Math.abs(currentSpeed)
-  await controlChassis(wheel, speed)
+  await controlChassisHandler(wheel, speed)
 }
 
 // 控制升降轴
-async function controlLift(speed) {
+async function controlLiftHandler(speed) {
   try {
-    await axios.post('/api/control_lift', {
-      speed: speed
-    })
+    await controlLift(speed)
   } catch (error) {
     console.error(`控制升降轴失败: ${error.message}`)
   }
@@ -294,21 +285,16 @@ async function setLiftDirection(direction) {
   }
   // 使用当前滑块的速度，只改变方向
   const speed = direction * Math.abs(currentSpeed)
-  await controlLift(speed)
+  await controlLiftHandler(speed)
 }
 
 // 校准电机
-async function calibrateMotor(arm, motorName) {
+async function calibrateMotorHandler(arm, motorName) {
   const key = `${arm}_${motorName}`
   calibrating.value[key] = true
   
   try {
-    await axios.post('/api/calibrate', {
-      arm,
-      motor: motorName,
-      target_zero: 0.0
-    })
-    
+    await calibrateMotor(arm, motorName, 0.0)
     ElMessage.success(`${arm === 'left' ? '左' : '右'}机械臂 ${motorName} 校准成功`)
   } catch (error) {
     ElMessage.error(`校准失败: ${error.message}`)

@@ -35,6 +35,16 @@
             {{ isRobotEngaged ? '🔌 断开' : '🔌 连接' }}
           </el-button>
           
+          <!-- 仿真模式复选框 -->
+          <label class="simulation-mode-label">
+            <input 
+              type="checkbox" 
+              v-model="simulationMode"
+              @change="$emit('toggle-simulation', $event.target.checked)" 
+            />
+            🧪 仿真测试模式
+          </label>
+          
           <!-- 设置按钮 -->
           <el-button 
             icon="Setting" 
@@ -222,6 +232,20 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.simulation-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  
+  input[type="checkbox"] {
+    cursor: pointer;
+  }
 }
 
 .settings-btn {
