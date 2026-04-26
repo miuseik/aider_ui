@@ -1,5 +1,4 @@
  <template>
-  <Layout>
     <div class="vr-ui-container">
       <!-- 多机器人视频网格 -->
       <div class="robot-grid">
@@ -30,13 +29,11 @@
         </div>
       </div>
     </div>
-  </Layout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import Layout from '../components/Layout.vue'
 import VideoStream from '../components/VideoStream.vue'
 
 const router = useRouter()
@@ -144,13 +141,14 @@ onUnmounted(() => {
   height: calc(100vh - 60px);
   pointer-events: none;
   z-index: 9998;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   padding: 40px;
   overflow-y: auto;
+  transition: background 0.3s ease;
 }
 
 /* 自定义滚动条样式 */
@@ -192,7 +190,7 @@ onUnmounted(() => {
   transition: all 0.2s ease;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--card-bg);
   border: 2px solid transparent;
   height: auto;
   display: flex;
@@ -200,13 +198,13 @@ onUnmounted(() => {
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 255, 136, 0.2);
-    border-color: rgba(0, 255, 136, 0.3);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--accent-color);
   }
 
   &.selected {
-    border-color: #00ff88;
-    box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 20px rgba(var(--accent-color), 0.4);
   }
 }
 

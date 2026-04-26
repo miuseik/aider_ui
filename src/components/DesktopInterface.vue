@@ -1,21 +1,10 @@
 <template>
   <div class="desktop-interface">
-    <div class="desktop-header">
-      <RobotStatus
-        :status="status"
-        :is-robot-engaged="isRobotEngaged"
-        :show-warning="showWarning"
-        :simulation-mode="simulationMode"
-        @toggle="$emit('toggle-robot')"
-        @toggle-simulation="$emit('toggle-simulation', $event)"
-        @refresh="$emit('refresh-status')"
-      />
-
-      <VrInstructions 
-        :vr-server-url="vrServerUrl"
-        @switch-vr="$emit('switch-vr')"
-      />
-    </div>
+    <VrInstructions 
+      :status="status"
+      :vr-server-url="vrServerUrl"
+      @switch-vr="$emit('switch-vr')"
+    />
 
     <KeyboardHelp 
       :is-keyboard-enabled="isKeyboardEnabled"
@@ -25,7 +14,6 @@
 </template>
 
 <script setup>
-import RobotStatus from './RobotStatus.vue'
 import KeyboardHelp from './KeyboardHelp.vue'
 import VrInstructions from './VrInstructions.vue'
 
@@ -34,14 +22,6 @@ defineProps({
     type: Object,
     required: true
   },
-  isRobotEngaged: {
-    type: Boolean,
-    default: false
-  },
-  showWarning: {
-    type: Boolean,
-    default: false
-  },
   vrServerUrl: {
     type: String,
     required: true
@@ -49,14 +29,10 @@ defineProps({
   isKeyboardEnabled: {
     type: Boolean,
     default: false
-  },
-  simulationMode: {
-    type: Boolean,
-    default: false
   }
 })
 
-defineEmits(['toggle-robot', 'toggle-keyboard', 'switch-vr', 'toggle-simulation', 'refresh-status'])
+defineEmits(['toggle-keyboard', 'switch-vr'])
 </script>
 
 <style>

@@ -1,46 +1,46 @@
 <template>
   <el-config-provider :locale="zhCn">
-    <div id="app" :class="{ 'dark-mode': isDarkMode }">
-      <!-- Top Control Bar -->
-      <div class="top-bar">
-        <div class="brand">telegrip</div>
-        <div class="controls">
-          <!-- 证书授权提示 -->
-          <div class="cert-auth-tip" >
-            <span class="tip-text">首次使用需接受证书：</span>
-            <el-button size="small" type="primary" plain @click="openCertAuth(apiUrl)">API</el-button>
-            <el-button size="small" type="success" plain @click="openCertAuth(wsUrl)">WS</el-button>
+    <div id="app">
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <!-- 状态指示器 -->
+          <div class="status-indicators">
+            <div class="status-item">
+              <span class="status-dot" :class="{ connected: status.left_arm_connected }"></span>
+              <span>左臂</span>
+            </div>
+            <div class="status-item">
+              <span class="status-dot" :class="{ connected: status.right_arm_connected }"></span>
+              <span>右臂</span>
+            </div>
+            <div class="status-item">
+              <span class="status-dot" :class="{ connected: status.vrConnected }"></span>
+              <span>VR</span>
+            </div>
+            <div class="status-item">
+              <span class="status-dot" :class="{ connected: status.wsConnected }"></span>
+              <span>WS</span>
+            </div>
           </div>
-          
-          <!-- WebSocket 测试按钮 -->
+        </div>
+        
+        <div class="toolbar-right">
+          <!-- 连接机器人按钮 -->
           <el-button 
-            size="small" 
-            type="warning" 
-            plain 
-            @click="sendTestVRData"
-            :disabled="!wsConnected"
-            title="发送测试 VR 数据"
+            type="primary"
+            @click="toggleRobotEngagement"
+            class="engage-btn"
           >
-            🎮 测试手柄
+            {{ isRobotEngaged ? '🔌 断开' : '🔌 连接' }}
           </el-button>
           
-          <el-button 
-            icon="Tools" 
-            circle 
-            @click="showCalibration = true"
-            title="电机校准"
-            class="calibration-btn"
-          />
-          <el-button 
-            :icon="isDarkMode ? Sunny : Moon"
-            circle 
-            @click="toggleTheme"
-            class="theme-btn"
-          />
+          <!-- 设置按钮 -->
           <el-button 
             icon="Setting" 
             circle 
             @click="openSettings"
+            title="设置"
             class="settings-btn"
           />
         </div>
@@ -65,34 +65,14 @@
         />
       </el-dialog>
 
-      <!-- Calibration Dialog -->
-      <el-dialog
-        v-model="showCalibration"
-        title=""
-        width="90%"
-        :close-on-click-modal="false"
-        class="calibration-dialog"
-      >
-        <CalibrationPage 
-          :status="status"
-          @back="showCalibration = false"
-        />
-      </el-dialog>
-
       <!-- Main Content - Single Screen Layout -->
-      <div class="main-container" v-show="!isVRMode">
+      <div v-show="!isVRMode">
         <DesktopInterface 
           :status="status"
-          :is-robot-engaged="isRobotEngaged"
-          :show-warning="showWarning"
           :vr-server-url="vrServerUrl"
           :is-keyboard-enabled="isKeyboardEnabled"
-          :simulation-mode="simulationMode"
-          @toggle-robot="toggleRobotEngagement"
           @toggle-keyboard="toggleKeyboardControl"
           @switch-vr="switchToVrView"
-          @toggle-simulation="simulationMode = $event"
-          @refresh-status="updateStatus"
         />
       </div>
 
@@ -107,20 +87,16 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElConfigProvider, ElMessage } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import { Sunny, Moon } from '@element-plus/icons-vue'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
 import { wsClient } from '../utils/websocket'
 import SettingsModal from '../components/SettingsModal.vue'
 import DesktopInterface from '../components/DesktopInterface.vue'
-import CalibrationPage from './Calibration.vue'
 
 // State
 const isVRMode = ref(false)
 const settingsVisible = ref(false)
-const showCalibration = ref(false)
-const isDarkMode = ref(false)
 const simulationMode = ref(false)
 const wsConnected = ref(false)
 
@@ -135,18 +111,6 @@ const wsUrl = import.meta.env.VITE_WS_URL ? import.meta.env.VITE_WS_URL.replace(
 const { config, saving, restarting, vrServerUrl, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
 const { isRobotEngaged, showWarning, status, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning, simulationMode)
-
-// Theme toggle
-function toggleTheme() {
-  isDarkMode.value = !isDarkMode.value
-  document.documentElement.setAttribute('data-theme', isDarkMode.value ? 'dark' : 'light')
-  localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
-}
-
-// 证书授权
-function openCertAuth(url) {
-  window.open(url, '_blank')
-}
 
 // Settings functions
 function openSettings() {
@@ -163,45 +127,9 @@ function switchToVrView() {
   router.push('/vr-entrance')
 }
 
-// 发送测试 VR 数据
-function sendTestVRData() {
-  if (!wsClient.isConnected) {
-    ElMessage.warning('WebSocket 未连接')
-    return
-  }
-  
-  // 构造测试的 VR 控制器数据（左手）
-  const testData = {
-    leftController: {
-      position: [0.5, 0.3, 0.4],
-      quaternion: { x: 0, y: 0, z: 0, w: 1 },
-      trigger: 0.8,
-      gripActive: true,
-      thumbstick: { x: 0, y: 0 }
-    },
-    rightController: {
-      position: null,
-      quaternion: null,
-      trigger: 0,
-      gripActive: false
-    }
-  }
-  
-  wsClient.send(testData)
-  ElMessage.success('已发送测试 VR 数据')
-  console.log('📤 发送测试数据:', testData)
-}
-
 // Lifecycle
 
 onMounted(() => {
-  // Load theme preference
-  const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark') {
-    isDarkMode.value = true
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }
-  
   // 初始查询一次状态
   updateStatus()
   
@@ -239,21 +167,66 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
-/* 组件特定样式 */
-.cert-auth-tip {
+/* 工具栏 */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: rgba(26, 26, 46, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+  margin-bottom: 20px;
+}
+
+.toolbar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-right: 12px;
-  padding: 6px 12px;
-  background: rgba(255, 193, 7, 0.1);
-  border-radius: 6px;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.status-indicators {
+  display: flex;
+  gap: 16px;
   
-  .tip-text {
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 13px;
-    color: var(--el-text-color-regular);
-    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.8);
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #ff453a;
+      transition: all 0.3s ease;
+      
+      &.connected {
+        background-color: #34c759;
+        box-shadow: 0 0 8px rgba(52, 199, 89, 0.5);
+      }
+    }
+  }
+}
+
+.brand {
+  font-size: 20px;
+  font-weight: bold;
+  color: rgba(100, 200, 255, 0.9);
+  letter-spacing: 3px;
+  text-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-btn {
+  &:hover {
+    transform: scale(1.1);
   }
 }
 </style>

@@ -1,5 +1,4 @@
 <template>
-  <Layout>
     <!-- 连接/断开视频按钮 -->
     <button 
       class="connect-video-btn"
@@ -57,7 +56,6 @@
         <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
       </a-scene>
     </div>
-  </Layout>
 </template>
 
 <script setup>
@@ -68,7 +66,6 @@ import { wsClient } from '../utils/websocket.js'           // WebSocket 客户�
 import { getFullVRData, getButtonName } from '../utils/vrData.js'  // VR 数据工具
 import { createAxisIndicators } from '../utils/vrHelpers.js'       // 坐标轴指示器
 import { WebRTCVideoManager } from '../utils/webRTCManager'        // WebRTC 管理器
-import Layout from '../components/Layout.vue'                      // 布局组件
 
 // ========== 响应式变量 ==========
 const sceneRef = ref(null)  // A-Frame 场景引用

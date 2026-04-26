@@ -1,29 +1,41 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Index from '../views/Index.vue'
-import VrEntrance from '../views/VrEntrance.vue'
-import VrScene from '../views/VrScene.vue'
-import Calibration from '../views/Calibration.vue'
 
 const routes = [
   {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/user/Login.vue')
+  },
+  {
     path: '/',
-    name: 'Index',
-    component: Index
-  },
-  {
-    path: '/vr-entrance',
-    name: 'VrEntrance',
-    component: VrEntrance
-  },
-  {
-    path: '/vr-scene',
-    name: 'VrScene',
-    component: VrScene
-  },
-  {
-    path: '/calibration',
-    name: 'Calibration',
-    component: Calibration
+    component: () => import('../components/layout/AppLayout.vue'),
+    children: [
+      {
+        path: '/',
+        name: 'index',
+        component: () => import('../views/Index.vue')
+      },
+      {
+        path: '/vr-entrance',
+        name: 'VrEntrance',
+        component: () => import('../views/VrEntrance.vue')
+      },
+      {
+        path: '/vr-scene',
+        name: 'VrScene',
+        component: () => import('../views/VrScene.vue')
+      },
+      {
+        path: '/calibration',
+        name: 'Calibration',
+        component: () => import('../views/Calibration.vue')
+      },
+      {
+        path: '/profile',
+        name: 'Profile',
+        component: () => import('../views/user/Profile.vue')
+      }
+    ]
   }
 ]
 
