@@ -31,6 +31,11 @@ const routes = [
         component: () => import('../views/Calibration.vue')
       },
       {
+        path: '/servo-manager',
+        name: 'ServoManager',
+        component: () => import('../views/ServoManager.vue')
+      },
+      {
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')

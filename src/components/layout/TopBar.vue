@@ -2,6 +2,18 @@
   <div class="top-bar">
     <div class="logo" @click="goHome">Aider VR</div>
     <div class="nav-menu">
+      <router-link to="/" class="nav-item">
+        <span class="nav-icon">🏠</span>
+        <span>首页</span>
+      </router-link>
+      <router-link to="/servo-manager" class="nav-item">
+        <span class="nav-icon">🔍</span>
+        <span>舵机管理</span>
+      </router-link>
+      <router-link to="/calibration" class="nav-item">
+        <span class="nav-icon">⚙️</span>
+        <span>校准</span>
+      </router-link>
       <router-link to="/profile" class="nav-item">
         <span class="nav-icon">◈</span>
         <span>个人中心</span>
