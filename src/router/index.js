@@ -31,6 +31,11 @@ const routes = [
         component: () => import('../views/Calibration.vue')
       },
       {
+        path: '/motors',
+        name: 'Motors',
+        component: () => import('../components/MotorControlPanel.vue')
+      },
+      {
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')

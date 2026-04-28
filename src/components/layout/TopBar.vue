@@ -2,6 +2,22 @@
   <div class="top-bar">
     <div class="logo" @click="goHome">Aider VR</div>
     <div class="nav-menu">
+      <router-link to="/" class="nav-item">
+        <span class="nav-icon">🏠</span>
+        <span>首页</span>
+      </router-link>
+      <router-link to="/calibration" class="nav-item">
+        <span class="nav-icon">🎯</span>
+        <span>校准</span>
+      </router-link>
+      <router-link to="/motors" class="nav-item">
+        <span class="nav-icon">🔧</span>
+        <span>电机管理</span>
+      </router-link>
+      <router-link to="/vr-entrance" class="nav-item">
+        <span class="nav-icon">🥽</span>
+        <span>VR控制</span>
+      </router-link>
       <router-link to="/profile" class="nav-item">
         <span class="nav-icon">◈</span>
         <span>个人中心</span>
@@ -88,19 +104,19 @@ onMounted(() => {
 .nav-menu {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   margin-left: auto;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 6px;
+  padding: 8px 14px;
   color: rgba(100, 200, 255, 0.9);
   text-decoration: none;
-  font-size: 14px;
-  letter-spacing: 2px;
+  font-size: 13px;
+  letter-spacing: 1px;
   border: 1px solid transparent;
   transition: all 0.3s;
 

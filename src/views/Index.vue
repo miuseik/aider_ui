@@ -44,36 +44,10 @@
             />
             🧪 仿真测试模式
           </label>
-          
-          <!-- 设置按钮 -->
-          <el-button 
-            icon="Setting" 
-            circle 
-            @click="openSettings"
-            title="设置"
-            class="settings-btn"
-          />
         </div>
       </div>
 
-      <!-- Settings Modal -->
-      <el-dialog
-        v-model="settingsVisible"
-        title="系统设置"
-        width="600px"
-        :close-on-click-modal="false"
-      >
-        <SettingsModal 
-          v-model:send-interval-ms="sendIntervalMs"
-          :visible="settingsVisible"
-          :config="config"
-          :saving="saving"
-          :restarting="restarting"
-          @close="closeSettings"
-          @save="saveConfiguration"
-          @restart="restartSystem"
-        />
-      </el-dialog>
+
 
       <!-- Main Content - Single Screen Layout -->
       <div v-show="!isVRMode">
@@ -95,42 +69,25 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElConfigProvider, ElMessage } from 'element-plus'
+import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
-import { wsClient } from '../utils/websocket'
-import SettingsModal from '../components/SettingsModal.vue'
 import DesktopInterface from '../components/DesktopInterface.vue'
 
 // State
 const isVRMode = ref(false)
-const settingsVisible = ref(false)
 const simulationMode = ref(false)
 const wsConnected = ref(false)
 
 // Router
 const router = useRouter()
 
-// 环境变量
-const apiUrl = import.meta.env.VITE_API_URL || 'https://localhost:8442'
-const wsUrl = import.meta.env.VITE_WS_URL ? import.meta.env.VITE_WS_URL.replace('wss://', 'https://').replace('/ws', '') : 'https://localhost:8442'
-
 // Composables
-const { config, saving, restarting, vrServerUrl, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
+const { vrServerUrl } = useConfig()
 const { isRobotEngaged, showWarning, status, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning, simulationMode)
-
-// Settings functions
-function openSettings() {
-  settingsVisible.value = true
-  loadConfiguration()
-}
-
-function closeSettings() {
-  settingsVisible.value = false
-}
 
 // VR mode toggle
 function switchToVrView() {
@@ -245,12 +202,6 @@ onUnmounted(() => {
   
   input[type="checkbox"] {
     cursor: pointer;
-  }
-}
-
-.settings-btn {
-  &:hover {
-    transform: scale(1.1);
   }
 }
 </style>

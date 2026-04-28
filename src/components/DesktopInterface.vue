@@ -1,12 +1,6 @@
 <template>
   <div class="desktop-interface">
-    <VrInstructions 
-      :status="status"
-      :vr-server-url="vrServerUrl"
-      @switch-vr="$emit('switch-vr')"
-    />
-
-    <KeyboardHelp 
+    <KeyboardHelp
       :is-keyboard-enabled="isKeyboardEnabled"
       @toggle="$emit('toggle-keyboard')"
     />
@@ -15,7 +9,6 @@
 
 <script setup>
 import KeyboardHelp from './KeyboardHelp.vue'
-import VrInstructions from './VrInstructions.vue'
 
 defineProps({
   status: {
