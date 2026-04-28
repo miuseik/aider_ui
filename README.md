@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "软件功能都ok了，准备开发与硬件的集成";git push
+git add ./;git commit -m "修改了UI.还没接入功能";git push
 ```
 ```bash
 ssh root@121.40.151.10
@@ -14,6 +14,9 @@ sudo journalctl -u aider-server.service -f
 
 ```bash
 npm run build;
+```
+```bash
+npm run dev;
 ```
 ```bash
 git checkout 。/

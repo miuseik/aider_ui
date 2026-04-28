@@ -2,7 +2,10 @@
   <div class="calibration-page">
     <div class="header">
       <h2>🔧 电机校准</h2>
-      <el-button @click="$emit('back')">返回</el-button>
+      <div class="header-actions">
+        <el-button icon="Setting" @click="openSettings">⚙️ 系统设置</el-button>
+        <el-button @click="$router.push('/')">返回</el-button>
+      </div>
     </div>
 
     <div class="content">
@@ -95,28 +98,61 @@
       >
         <ol style="margin: 10px 0; padding-left: 20px">
           <li>手动将机械臂移动到零点位置</li>
-          <li>点击对应电机的"校准零点"按钮</li>
+          <li>点击对应电机的“校准零点”按钮</li>
           <li>系统自动记录偏移量并保存</li>
           <li>所有电机会在下次启动时自动应用偏移量</li>
         </ol>
       </el-alert>
     </div>
+
+    <!-- 系统设置对话框 -->
+    <el-dialog
+      v-model="settingsVisible"
+      title="系统设置"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <SettingsModal 
+        v-model:send-interval-ms="sendIntervalMs"
+        :visible="settingsVisible"
+        :config="config"
+        :saving="saving"
+        :restarting="restarting"
+        @close="closeSettings"
+        @save="saveConfiguration"
+        @restart="restartSystem"
+      />
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import { useRobot } from '@/composables/useRobot'
+import { useConfig } from '@/composables/useConfig'
+import SettingsModal from '@/components/SettingsModal.vue'
 
-const props = defineProps({
-  status: {
-    type: Object,
-    required: true
-  }
-})
+const router = useRouter()
 
-const emit = defineEmits(['back'])
+const { status, updateStatus } = useRobot()
+const { config, saving, restarting, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
+
+// 设置对话框状态
+const settingsVisible = ref(false)
+
+// 打开设置
+function openSettings() {
+  settingsVisible.value = true
+  loadConfiguration()
+}
+
+// 关闭设置
+function closeSettings() {
+  settingsVisible.value = false
+}
 
 // 电机列表
 const leftMotors = [
@@ -132,6 +168,11 @@ const rightMotors = [...leftMotors]
 
 // 校准状态
 const calibrating = ref({})
+
+// 页面加载时获取状态
+onMounted(() => {
+  updateStatus()
+})
 
 // 校准电机
 async function calibrateMotor(arm, motorName) {
@@ -169,6 +210,11 @@ async function calibrateMotor(arm, motorName) {
   
   h2 {
     margin: 0;
+  }
+  
+  .header-actions {
+    display: flex;
+    gap: 10px;
   }
 }
 
