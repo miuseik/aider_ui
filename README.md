@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "修改了UI.还没接入功能";git push
+git add ./;git commit -m "舵机正常工作了，继续调试中...";git push
 ```
 ```bash
 ssh root@121.40.151.10
@@ -20,4 +20,7 @@ npm run dev;
 ```
 ```bash
 git checkout 。/
+```
+```bash
+git pull
 ```

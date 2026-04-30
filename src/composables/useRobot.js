@@ -1,4 +1,5 @@
 import { ref, reactive } from 'vue'
+import { ElMessage } from 'element-plus'
 
 export function useRobot() {
   const isRobotEngaged = ref(false)
@@ -29,11 +30,11 @@ export function useRobot() {
         isRobotEngaged.value = !isRobotEngaged.value
         showWarning.value = false
       } else {
-        alert(action === 'connect' ? '连接机器人失败' : '断开机器人失败')
+        ElMessage.error(action === 'connect' ? '连接机器人失败' : '断开机器人失败')
       }
     } catch (error) {
       console.error('Error toggling robot engagement:', error)
-      alert('与服务器通信错误')
+      ElMessage.error('与服务器通信错误')
     }
   }
 

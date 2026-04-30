@@ -2,28 +2,21 @@
   <div class="top-bar">
     <div class="logo" @click="goHome">Aider VR</div>
     <div class="nav-menu">
-      <router-link to="/" class="nav-item">
-        <span class="nav-icon">🏠</span>
-        <span>首页</span>
-      </router-link>
-      <router-link to="/calibration" class="nav-item">
-        <span class="nav-icon">🎯</span>
-        <span>校准</span>
-      </router-link>
-      <router-link to="/motors" class="nav-item">
-        <span class="nav-icon">🔧</span>
-        <span>电机管理</span>
-      </router-link>
-      <router-link to="/vr-entrance" class="nav-item">
-        <span class="nav-icon">🥽</span>
-        <span>VR控制</span>
-      </router-link>
-      <router-link to="/profile" class="nav-item">
-        <span class="nav-icon">◈</span>
-        <span>个人中心</span>
+      <router-link 
+        v-for="item in navItems" 
+        :key="item.path"
+        :to="item.path" 
+        class="nav-item" 
+        :class="{ active: isActive(item.path) }"
+      >
+        <span class="nav-icon">{{ item.icon }}</span>
+        <span>{{ item.label }}</span>
       </router-link>
       <button class="theme-btn" @click="toggleTheme" title="切换主题">
         <span>{{ isDarkMode ? '☀️' : '🌙' }}</span>
+      </button>
+      <button class="settings-btn" @click="openSettings" title="系统设置">
+        <span>⚙️</span>
       </button>
       <div class="status">
         <span class="status-dot" :class="{ connected: wsConnected }"></span>
@@ -31,15 +24,51 @@
       </div>
     </div>
   </div>
+  
+  <!-- 设置对话框 - 使用 teleport 挂载到 body -->
+  <Teleport to="body">
+    <el-dialog
+      v-model="settingsVisible"
+      title="系统设置"
+      width="700px"
+      :close-on-click-modal="false"
+      :z-index="10001"
+    >
+      <SettingsModal 
+        :config="config"
+        :saving="saving"
+        :restarting="restarting"
+        :send-interval-ms="sendIntervalMs"
+        @close="settingsVisible = false"
+        @save="handleSave"
+        @restart="handleRestart"
+        @update:sendIntervalMs="sendIntervalMs = $event"
+      />
+    </el-dialog>
+  </Teleport>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import SettingsModal from '@/components/SettingsModal.vue'
+import { useConfig } from '@/composables/useConfig'
 
 const router = useRouter()
+const route = useRoute()
+const { config, saving, restarting, sendIntervalMs, loadConfiguration, saveConfiguration, restartSystem } = useConfig()
 
 const isDarkMode = ref(true)
+const settingsVisible = ref(false)
+
+const navItems = [
+  { path: '/', icon: '🏠', label: '首页' },
+  { path: '/Hardware-info', icon: '🎯', label: '硬件信息' },
+  // { path: '/calibration', icon: '🎯', label: '硬件信息' },
+  { path: '/servo-manager', icon: '🔧', label: '电机管理' },
+  { path: '/vr-entrance', icon: '🥽', label: 'VR控制' },
+  { path: '/profile', icon: '◈', label: '个人中心' }
+]
 
 const wsConnected = computed(() => {
   return window.__globalStatus?.wsConnected || false
@@ -47,6 +76,10 @@ const wsConnected = computed(() => {
 
 function goHome() {
   router.push('/')
+}
+
+function isActive(path) {
+  return route.path === path
 }
 
 function toggleTheme() {
@@ -57,6 +90,20 @@ function toggleTheme() {
     document.documentElement.classList.remove('dark')
   }
   localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
+}
+
+function openSettings() {
+  settingsVisible.value = true
+  loadConfiguration()
+}
+
+async function handleSave() {
+  await saveConfiguration()
+}
+
+async function handleRestart() {
+  await restartSystem()
+  settingsVisible.value = false
 }
 
 onMounted(() => {
@@ -126,7 +173,7 @@ onMounted(() => {
     box-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
   }
 
-  &.router-link-active {
+  &.active {
     border-color: rgba(100, 200, 255, 0.8);
     background: rgba(100, 200, 255, 0.15);
     color: #fff;
@@ -138,6 +185,26 @@ onMounted(() => {
 }
 
 .theme-btn {
+  background: transparent;
+  border: 1px solid rgba(100, 200, 255, 0.4);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  transition: all 0.3s;
+
+  &:hover {
+    background: rgba(100, 200, 255, 0.1);
+    border-color: rgba(100, 200, 255, 0.6);
+    transform: scale(1.1);
+  }
+}
+
+.settings-btn {
   background: transparent;
   border: 1px solid rgba(100, 200, 255, 0.4);
   border-radius: 50%;

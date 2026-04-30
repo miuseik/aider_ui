@@ -119,6 +119,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const activeTab = ref('login')
@@ -142,11 +143,11 @@ const handleLogin = () => {
 
 const handleRegister = () => {
   if (registerForm.value.password !== registerForm.value.confirmPassword) {
-    alert('两次输入的密码不一致')
+    ElMessage.warning('两次输入的密码不一致')
     return
   }
   console.log('Register:', registerForm.value)
-  alert('注册成功')
+  ElMessage.success('注册成功')
   activeTab.value = 'login'
 }
 </script>

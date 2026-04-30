@@ -24,8 +24,17 @@
             </div>
           </div>
         </div>
-        
+<!--        刷新状态-->
         <div class="toolbar-right">
+          <!-- WebSocket 连接按钮 -->
+          <el-button 
+            type="success"
+            @click="checkWsConnection"
+            class="ws-btn"
+          >
+            🌐 WS
+          </el-button>
+          
           <!-- 连接机器人按钮 -->
           <el-button 
             type="primary"
@@ -34,16 +43,6 @@
           >
             {{ isRobotEngaged ? '🔌 断开' : '🔌 连接' }}
           </el-button>
-          
-          <!-- 仿真模式复选框 -->
-          <label class="simulation-mode-label">
-            <input 
-              type="checkbox" 
-              v-model="simulationMode"
-              @change="$emit('toggle-simulation', $event.target.checked)" 
-            />
-            🧪 仿真测试模式
-          </label>
         </div>
       </div>
 
@@ -51,6 +50,9 @@
 
       <!-- Main Content - Single Screen Layout -->
       <div v-show="!isVRMode">
+        <!-- 硬件信息卡片 -->
+        <HardwareInfoCard />
+        
         <DesktopInterface 
           :status="status"
           :vr-server-url="vrServerUrl"
@@ -69,16 +71,16 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElConfigProvider } from 'element-plus'
+import { ElConfigProvider, ElMessageBox } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
 import DesktopInterface from '../components/DesktopInterface.vue'
+import HardwareInfoCard from '../components/HardwareInfoCard.vue'
 
 // State
 const isVRMode = ref(false)
-const simulationMode = ref(false)
 const wsConnected = ref(false)
 
 // Router
@@ -87,11 +89,37 @@ const router = useRouter()
 // Composables
 const { vrServerUrl } = useConfig()
 const { isRobotEngaged, showWarning, status, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
-const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning, simulationMode)
+const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
 
 // VR mode toggle
 function switchToVrView() {
   router.push('/vr-entrance')
+}
+
+// 检查 WebSocket 连接状态
+const checkWsConnection = async () => {
+  const isConnected = status.wsConnected
+  const terminalConnected = status.terminal_connected
+  
+  let message = ''
+  if (isConnected && terminalConnected) {
+    message = '✅ WebSocket 已连接\n✅ Terminal 已连接'
+  } else if (isConnected && !terminalConnected) {
+    message = '✅ WebSocket 已连接\n❌ Terminal 未连接'
+  } else if (!isConnected && terminalConnected) {
+    message = '❌ WebSocket 未连接\n✅ Terminal 已连接'
+  } else {
+    message = '❌ WebSocket 未连接\n❌ Terminal 未连接'
+  }
+  
+  await ElMessageBox.alert(
+    message,
+    'WebSocket 连接状态',
+    {
+      confirmButtonText: '确定',
+      type: isConnected ? 'success' : 'warning'
+    }
+  )
 }
 
 // Lifecycle
@@ -189,6 +217,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.ws-btn {
+  font-weight: 600;
 }
 
 .simulation-mode-label {

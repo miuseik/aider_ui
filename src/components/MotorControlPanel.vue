@@ -204,6 +204,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
@@ -433,7 +434,7 @@ async function refreshMotors() {
     ]
   } catch (error) {
     console.error('获取电机列表失败:', error)
-    alert('获取电机列表失败: ' + error.message)
+    ElMessage.error('获取电机列表失败: ' + error.message)
   } finally {
     loading.value = false
   }
@@ -451,11 +452,11 @@ async function toggleTorque(motor) {
     
     if (response.data.success) {
       motor.torqueEnabled = enable
-      alert(`电机 ${motor.displayName} 已${enable ? '使能' : '制动'}`)
+      ElMessage.success(`电机 ${motor.displayName} 已${enable ? '使能' : '制动'}`)
     }
   } catch (error) {
     console.error('切换电机制动状态失败:', error)
-    alert('操作失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error('操作失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -477,10 +478,10 @@ async function toggleAllTorque(enable) {
         motor.torqueEnabled = enable
       }
     }
-    alert(`已${action}所有在线电机`)
+    ElMessage.success(`已${action}所有在线电机`)
   } catch (error) {
     console.error('批量操作失败:', error)
-    alert('批量操作失败: ' + error.message)
+    ElMessage.error('批量操作失败: ' + error.message)
   }
 }
 
@@ -510,14 +511,14 @@ async function executeCalibration() {
     })
     
     if (response.data.success) {
-      alert(`电机 ${motor.displayName} 校准成功！`)
+      ElMessage.success(`电机 ${motor.displayName} 校准成功！`)
       closeCalibrateModal()
       // 刷新列表
       await refreshMotors()
     }
   } catch (error) {
     console.error('校准失败:', error)
-    alert('校准失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error('校准失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -547,14 +548,14 @@ async function executeControl() {
     })
     
     if (response.data.success) {
-      alert(`电机 ${motor.displayName} 控制命令已发送！`)
+      ElMessage.success(`电机 ${motor.displayName} 控制命令已发送！`)
       closeControlModal()
       // 刷新列表
       await refreshMotors()
     }
   } catch (error) {
     console.error('控制失败:', error)
-    alert('控制失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error('控制失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -580,7 +581,7 @@ async function executeEditId() {
   
   // 验证ID范围
   if (!newId || newId < 1 || newId > 254) {
-    alert('ID必须在1-254范围内！')
+    ElMessage.warning('ID必须在1-254范围内！')
     return
   }
   
@@ -598,14 +599,14 @@ async function executeEditId() {
     })
     
     if (response.data.success) {
-      alert(`电机 ${motor.displayName} 的ID已成功修改为 ${newId}！\n\n请断开连接后重新扫描以识别新ID。`)
+      ElMessage.success(`电机 ${motor.displayName} 的ID已成功修改为 ${newId}！请断开连接后重新扫描以识别新ID。`)
       closeEditIdModal()
       // 刷新列表
       await refreshMotors()
     }
   } catch (error) {
     console.error('修改ID失败:', error)
-    alert('修改ID失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error('修改ID失败: ' + (error.response?.data?.message || error.message))
   }
 }
 

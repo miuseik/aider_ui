@@ -92,6 +92,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 
@@ -136,17 +137,17 @@ const startLatencySimulation = () => {
 }
 
 const handleEditProfile = () => {
-  alert('编辑资料功能开发中')
+  ElMessage.info('编辑资料功能开发中')
 }
 
 const handleChangePassword = () => {
-  alert('修改密码功能开发中')
+  ElMessage.info('修改密码功能开发中')
 }
 
 const handleClearCache = () => {
   if (confirm('确定要清除缓存吗？')) {
     localStorage.clear()
-    alert('缓存已清除')
+    ElMessage.success('缓存已清除')
   }
 }
 

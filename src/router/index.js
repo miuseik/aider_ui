@@ -26,9 +26,9 @@ const routes = [
         component: () => import('../views/VrScene.vue')
       },
       {
-        path: '/calibration',
-        name: 'Calibration',
-        component: () => import('../views/Calibration.vue')
+        path: '/Hardware-info',
+        name: 'HardwareInfo',
+        component: () => import('../views/HardwareInfo.vue')
       },
       {
         path: '/servo-manager',

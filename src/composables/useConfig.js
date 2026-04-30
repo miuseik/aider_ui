@@ -1,4 +1,5 @@
 import { reactive, computed, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 export function useConfig() {
   const config = reactive({
@@ -37,7 +38,7 @@ export function useConfig() {
       Object.assign(config, data)
     } catch (error) {
       console.error('Error loading configuration:', error)
-      alert('加载配置失败')
+      ElMessage.error('加载配置失败')
     }
   }
 
@@ -51,33 +52,42 @@ export function useConfig() {
       })
       const data = await response.json()
       if (data.success) {
-        alert('配置保存成功！请使用重启按钮应用更改。')
+        ElMessage.success('配置保存成功！请使用重启按钮应用更改。')
       } else {
-        alert('保存配置失败: ' + (data.error || '未知错误'))
+        ElMessage.error('保存配置失败: ' + (data.error || '未知错误'))
       }
     } catch (error) {
       console.error('Error saving configuration:', error)
-      alert('保存配置失败')
+      ElMessage.error('保存配置失败')
     } finally {
       saving.value = false
     }
   }
 
   async function restartSystem() {
-    if (!confirm('确定要重启系统吗？这将暂时断开所有设备。')) return
+    try {
+      await ElMessageBox.confirm('确定要重启系统吗？这将暂时断开所有设备。', '确认重启', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+        zIndex: 10002
+      })
+    } catch {
+      return // 用户取消
+    }
     
     restarting.value = true
     try {
       const response = await fetch('/api/restart', { method: 'POST' })
       if (response.ok) {
-        alert('系统正在重启...页面将在几秒后自动重新加载。')
+        ElMessage.success('系统正在重启...页面将在几秒后自动重新加载。')
         setTimeout(() => window.location.reload(), 5000)
       } else {
-        alert('重启系统失败。请手动重启。')
+        ElMessage.error('重启系统失败。请手动重启。')
       }
     } catch (error) {
       console.error('Error restarting system:', error)
-      alert('与服务器通信错误。请手动重启。')
+      ElMessage.error('与服务器通信错误。请手动重启。')
     } finally {
       restarting.value = false
     }

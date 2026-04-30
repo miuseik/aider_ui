@@ -1,6 +1,7 @@
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
-export function useKeyboard(isRobotEngaged, showConnectionWarning, simulationMode) {
+export function useKeyboard(isRobotEngaged, showConnectionWarning) {
   const isKeyboardEnabled = ref(false)
   const pressedKeys = new Set()
 
@@ -45,11 +46,11 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning, simulationMod
       if (data.code === 200 && data.data?.success) {
         isKeyboardEnabled.value = !isKeyboardEnabled.value
       } else {
-        alert('切换键盘控制失败: ' + (data.message || '未知错误'))
+        ElMessage.error('切换键盘控制失败: ' + (data.message || '未知错误'))
       }
     } catch (error) {
       console.error('Error toggling keyboard control:', error)
-      alert('与服务器通信错误')
+      ElMessage.error('与服务器通信错误')
     }
   }
 
@@ -75,12 +76,6 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning, simulationMod
   function handleKeyDown(event) {
     if (isControlKey(event.code)) {
       event.preventDefault()
-    }
-
-    // 仿真模式下不检查真机连接
-    if (!simulationMode.value && isControlKey(event.code) && !isRobotEngaged.value) {
-      showConnectionWarning()
-      return
     }
 
     if (!isKeyboardEnabled.value || pressedKeys.has(event.code)) return

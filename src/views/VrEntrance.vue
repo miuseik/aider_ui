@@ -34,6 +34,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import VideoStream from '../components/VideoStream.vue'
 
 const router = useRouter()
@@ -102,7 +103,7 @@ async function handleStartTracking(robot) {
     await new Promise(resolve => setTimeout(resolve, 300))
     router.push('/vr-scene')
   } catch (err) {
-    alert(`启动失败: ${err.message}`)
+    ElMessage.error(`启动失败: ${err.message}`)
   } finally {
     isConnecting.value = false
   }
