@@ -32,6 +32,7 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
+    envDir: path.resolve(__dirname, 'env'),
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src')

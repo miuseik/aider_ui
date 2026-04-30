@@ -50,9 +50,6 @@
 
       <!-- Main Content - Single Screen Layout -->
       <div v-show="!isVRMode">
-        <!-- 硬件信息卡片 -->
-        <HardwareInfoCard />
-        
         <DesktopInterface 
           :status="status"
           :vr-server-url="vrServerUrl"
@@ -77,7 +74,6 @@ import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
 import DesktopInterface from '../components/DesktopInterface.vue'
-import HardwareInfoCard from '../components/HardwareInfoCard.vue'
 
 // State
 const isVRMode = ref(false)

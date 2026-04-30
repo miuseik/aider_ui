@@ -52,7 +52,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import SettingsModal from '@/components/SettingsModal.vue'
-import { useConfig } from '@/composables/useConfig'
+import { useConfig } from '@/composables/useConfig.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -63,7 +63,7 @@ const settingsVisible = ref(false)
 
 const navItems = [
   { path: '/', icon: '🏠', label: '首页' },
-  { path: '/Hardware-info', icon: '🎯', label: '硬件信息' },
+  // { path: '/Hardware-info', icon: '🎯', label: '硬件信息' },
   // { path: '/calibration', icon: '🎯', label: '硬件信息' },
   { path: '/servo-manager', icon: '🔧', label: '电机管理' },
   { path: '/vr-entrance', icon: '🥽', label: 'VR控制' },

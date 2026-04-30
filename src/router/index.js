@@ -8,7 +8,7 @@ const routes = [
   },
   {
     path: '/',
-    component: () => import('../components/layout/AppLayout.vue'),
+    component: () => import('../layout/AppLayout.vue'),
     children: [
       {
         path: '/',
@@ -24,11 +24,6 @@ const routes = [
         path: '/vr-scene',
         name: 'VrScene',
         component: () => import('../views/VrScene.vue')
-      },
-      {
-        path: '/Hardware-info',
-        name: 'HardwareInfo',
-        component: () => import('../views/HardwareInfo.vue')
       },
       {
         path: '/servo-manager',

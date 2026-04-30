@@ -1,10 +1,5 @@
 <template>
   <div class="servo-manager">
-    <div class="header">
-      <h2>🔍 飞特舵机扫描</h2>
-      <p class="subtitle">扫描并查看在线舵机列表</p>
-    </div>
-
     <!-- 连接设置 -->
     <div class="card connection-card">
       <h3>🔌 连接设置</h3>
@@ -101,50 +96,64 @@
           :key="servo.id"
           class="servo-item"
         >
-          <div class="servo-info">
-            <div class="servo-id">ID: {{ servo.id }}</div>
-            <div class="servo-status online">● 在线</div>
-            <div class="servo-port">{{ servo.port || port }}</div>
-            <div class="servo-mode">
-              <select v-model="servo.mode" @change="switchMode(servo)" class="mode-select">
-                <option value="position">位置模式</option>
-                <option value="speed">速度模式</option>
-              </select>
-            </div>
-          </div>
-          <div class="servo-control" v-if="servo.mode === 'position'">
-            <input 
-              type="range" 
-              v-model.number="servo.angle" 
-              min="-180" 
-              max="180" 
-              @input="updateServoAngle(servo)"
-              class="angle-slider"
-            />
-            <span class="angle-value">{{ servo.angle || 0 }}°</span>
-          </div>
-          <div class="servo-control" v-else>
-            <input 
-              type="range" 
-              v-model.number="servo.speed" 
-              min="-1000" 
-              max="1000" 
-              @input="updateServoSpeed(servo)"
-              class="speed-slider"
-            />
-            <span class="speed-value">{{ servo.speed || 0 }}</span>
-            <button @click="stopServo(servo)" class="btn-stop" title="停止">
-              ⏹️
-            </button>
-          </div>
-          <div class="servo-actions">
-            <button @click="resetServo(servo)" class="btn-icon" title="重置舵机">
-              🔄
-            </button>
-            <button @click="changeServoId(servo)" class="btn-icon" title="修改ID">
-              🔢
-            </button>
-          </div>
+          <el-row :gutter="16">
+            <!-- 左边：ID信息和详细信息 -->
+            <el-col :span="12">
+              <div class="servo-info">
+                <div class="servo-id">ID: {{ servo.id }}</div>
+                <div class="servo-status online">● 在线</div>
+                <div class="servo-mode">
+                  <select v-model="servo.mode" @change="switchMode(servo)" class="mode-select">
+                    <option value="position">位置模式</option>
+                    <option value="speed">速度模式</option>
+                  </select>
+                </div>
+              </div>
+              <div class="servo-details-row">
+                <ServoInfoDisplay 
+                  :servo-id="servo.id" 
+                  :port="servo.port || port"
+                  v-model:info="servo.info"
+                />
+              </div>
+            </el-col>
+            
+            <!-- 右边：控制和操作按钮 -->
+            <el-col :span="12">
+              <div class="servo-control" v-if="(servo.mode || 'position') === 'position'">
+                <input 
+                  type="range" 
+                  v-model.number="servo.angle" 
+                  min="-180"
+                  max="180" 
+                  @input="updateServoAngle(servo)"
+                  class="angle-slider"
+                />
+              </div>
+              <div class="servo-control" v-else>
+                <input 
+                  type="range" 
+                  v-model.number="servo.speed" 
+                  min="-1000" 
+                  max="1000" 
+                  @input="updateServoSpeed(servo)"
+                  class="speed-slider"
+                />
+              </div>
+              <div class="servo-actions">
+                <span class="speed-value" >{{ servo.speed || 0 }}</span>
+                <button @click="stopServo(servo)" class="btn-stop" title="停止">
+                  ⏹️
+                </button>
+                <button @click="resetServo(servo)" class="btn-icon" title="重置舵机">
+                  🔄
+                </button>
+                <button @click="changeServoId(servo)" class="btn-icon" title="修改ID">
+                  🔢
+                </button>
+              </div>
+            </el-col>
+          </el-row>
         </div>
       </div>
     </div>
@@ -159,16 +168,100 @@
         <button @click="refreshScan" class="btn btn-primary">
           🔄 刷新扫描
         </button>
+        <button @click="resetAllServos" class="btn btn-warning">
+          🏠 一键归零
+        </button>
+      </div>
+    </div>
+
+    <!-- 机器人硬件信息 -->
+    <div class="card robot-hardware-card">
+      <div class="robot-header">
+        <h3>🤖 机器人硬件信息</h3>
+      </div>
+      <div class="robot-layout" v-if="robotConfig">
+        <!-- 左侧：左胳膊 -->
+        <div class="robot-column left">
+          <RobotPart 
+            title="左胳膊"
+            :servos="getPartServos('left_arm', robotConfig.left_bus?.left_arm)"
+            part-name="left_arm"
+            :scanning="scanning"
+            @claim="claimSingleServo"
+            @ping="pingServoByPart"
+            @calibrate="calibrateServoByPart"
+            @update-angle="handleUpdateAngle"
+          />
+        </div>
+
+        <!-- 中间：头、脖子、身体、底盘 -->
+        <div class="robot-column center">
+          <RobotPart 
+            title="头"
+            :servos="[]"
+            part-name="head"
+            :scanning="scanning"
+          />
+          
+          <RobotPart 
+            title="脖子"
+            :servos="getPartServos('neck', robotConfig.left_bus?.neck)"
+            part-name="neck"
+            :scanning="scanning"
+            @claim="claimSingleServo"
+            @ping="pingServoByPart"
+            @calibrate="calibrateServoByPart"
+            @update-angle="handleUpdateAngle"
+          />
+          
+          <RobotPart 
+            title="身体"
+            :servos="getPartServos('lift_axis', robotConfig.left_bus?.lift_axis)"
+            part-name="lift_axis"
+            :scanning="scanning"
+            @claim="claimSingleServo"
+            @ping="pingServoByPart"
+            @calibrate="calibrateServoByPart"
+            @update-angle="handleUpdateAngle"
+          />
+          
+          <RobotPart 
+            title="底盘"
+            :servos="getPartServos('base', robotConfig.left_bus?.base)"
+            part-name="base"
+            :scanning="scanning"
+            @claim="claimSingleServo"
+            @ping="pingServoByPart"
+            @calibrate="calibrateServoByPart"
+            @update-angle="handleUpdateAngle"
+          />
+        </div>
+
+        <!-- 右侧：右胳膊 -->
+        <div class="robot-column right">
+          <RobotPart 
+            title="右胳膊"
+            :servos="getPartServos('right_arm', robotConfig.right_bus?.right_arm)"
+            part-name="right_arm"
+            :scanning="scanning"
+            @claim="claimSingleServo"
+            @ping="pingServoByPart"
+            @calibrate="calibrateServoByPart"
+            @update-angle="handleUpdateAngle"
+          />
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { wsClient } from '@/utils/websocket.js'
+import ServoInfoDisplay from '@/components/ServoInfoDisplay.vue'
+import RobotPart from '@/components/RobotPart.vue'
 
 // API 基础 URL - 使用相对路径，通过 Vite 代理转发
 const API_BASE = ''
@@ -188,16 +281,432 @@ const currentScanId = ref(0)
 // 扫描结果
 const foundServos = ref([])
 
+// 机器人配置
+const robotConfig = ref(null)
+
+// 是否有腿
+const hasLegs = ref(false)
+
 // 防抖定时器
 let updateTimer = null
 
 // 移除旧的处理器
 let removeHandler = null
 
+// 根据ID获取舵机信息（带状态）
+const getServoById = (id) => {
+  const servo = foundServos.value.find(s => s.id === id)
+  return {
+    id: id,
+    online: !!servo,
+    display: servo ? `ID:${servo.id}` : `ID:${id} 离线`
+  }
+}
+
+// 根据部位获取舵机列表
+const getServoByPart = (part, index) => {
+  // 从配置文件读取映射
+  if (!robotConfig.value) return { id: 0, online: false, display: '-' }
+  
+  const partMap = {
+    'left_arm': Object.values(robotConfig.value.left_bus?.left_arm || {}),
+    'right_arm': Object.values(robotConfig.value.right_bus?.right_arm || {}),
+    'base': Object.values(robotConfig.value.left_bus?.base || {})
+  }
+  
+  const ids = partMap[part]
+  if (!ids || !ids[index - 1]) return { id: 0, online: false, display: '-' }
+  
+  const servoId = ids[index - 1]
+  const servo = foundServos.value.find(s => s.id === servoId)
+  return {
+    id: servoId,
+    online: !!servo,
+    display: servo ? `ID:${servoId}` : `ID:${servoId} 离线`
+  }
+}
+
+// 获取部位舵机配置（用于 RobotPart 组件）
+const getPartServos = (partName, partConfig) => {
+  if (!partConfig) return []
+  
+  // 如果是对象格式（胳膊、底盘）
+  if (typeof partConfig === 'object' && !Array.isArray(partConfig)) {
+    return partConfig
+  }
+  
+  return []
+}
+
+provide('foundServos', foundServos)
+
 onMounted(async () => {
   // 获取可用串口列表
   await fetchAvailablePorts()
+  // 获取机器人配置
+  await fetchRobotConfig()
 })
+
+// 获取机器人配置
+const fetchRobotConfig = async () => {
+  try {
+    const response = await axios.post('/api/get-servo-ids')
+    if (response.data.code === 200) {
+      robotConfig.value = response.data.data
+    }
+  } catch (error) {
+    console.error('获取配置失败:', error)
+  }
+}
+
+// 认领舵机 - 扫描并更新配置
+const claimServos = async () => {
+  if (!robotConfig.value) {
+    ElMessage.warning('请先加载配置')
+    return
+  }
+  
+  // 确认操作
+  const confirmed = await ElMessageBox.confirm(
+    '将扫描所有串口，自动识别舵机并更新配置文件。\n请确保所有舵机已连接并通电。',
+    '认领舵机',
+    {
+      confirmButtonText: '开始扫描',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+  
+  if (!confirmed) return
+  
+  scanning.value = true
+  foundServos.value = []
+  
+  try {
+    // 扫描左臂总线
+    const leftResponse = await axios.post('/api/scan_servos', {
+      port: robotConfig.value.left_bus.port,
+      servo_type: 'st3215',
+      start_id: 1,
+      end_id: 20,
+      baudrate: 1000000
+    })
+    
+    if (leftResponse.data.code === 200 && leftResponse.data.data?.servos) {
+      foundServos.value = leftResponse.data.data.servos.map(servo => ({
+        ...servo,
+        port: robotConfig.value.left_bus.port,
+        angle: 0,
+        speed: 0,
+        mode: 'position'
+      }))
+    }
+    
+    // 扫描右臂总线
+    const rightResponse = await axios.post('/api/scan_servos', {
+      port: robotConfig.value.right_bus.port,
+      servo_type: 'st3215',
+      start_id: 1,
+      end_id: 20,
+      baudrate: 1000000
+    })
+    
+    if (rightResponse.data.code === 200 && rightResponse.data.data?.servos) {
+      const rightServos = rightResponse.data.data.servos.map(servo => ({
+        ...servo,
+        port: robotConfig.value.right_bus.port,
+        angle: 0,
+        speed: 0,
+        mode: 'position'
+      }))
+      foundServos.value = [...foundServos.value, ...rightServos]
+    }
+    
+    ElMessage.success(`扫描完成，找到 ${foundServos.value.length} 个舵机`)
+    
+    // 自动更新配置文件
+    await saveServoConfig()
+    
+  } catch (error) {
+    console.error('扫描失败:', error)
+    ElMessage.error('扫描失败: ' + (error.response?.data?.message || error.message))
+  } finally {
+    scanning.value = false
+  }
+}
+
+// 保存舵机配置到 server
+const saveServoConfig = async () => {
+  try {
+    console.log('保存配置:', JSON.stringify(robotConfig.value, null, 2))
+    const response = await axios.post('/api/put-servo-ids', {
+      config: robotConfig.value
+    })
+    
+    if (response.data.code === 200) {
+      ElMessage.success('配置已保存到 server')
+      // 通知 Terminal 重载配置
+      await notifyTerminalReload()
+    }
+  } catch (error) {
+    console.error('保存配置失败:', error)
+    ElMessage.error('保存配置失败')
+  }
+}
+
+// 通知 Terminal 重载配置
+const notifyTerminalReload = async () => {
+  try {
+    // 通过 WebSocket 发送 reload_config 命令
+    wsClient.send({
+      type: 'api_command',
+      category: 'motor',
+      action: 'reload_servo_config'
+    })
+    ElMessage.success('已通知 Terminal 重载配置')
+  } catch (error) {
+    console.error('通知 Terminal 失败:', error)
+  }
+}
+
+// 认领单个舵机（根据部位和索引）
+const claimSingleServo = async (part, index) => {
+  if (!robotConfig.value) {
+    ElMessage.warning('请先加载配置')
+    return
+  }
+  
+  const partMap = {
+    'left_arm': robotConfig.value.left_bus?.left_arm,
+    'right_arm': robotConfig.value.right_bus?.right_arm,
+    'base': robotConfig.value.left_bus?.base,
+    'neck': robotConfig.value.left_bus?.neck,
+    'lift_axis': robotConfig.value.left_bus?.lift_axis
+  }
+  
+  const partConfig = partMap[part]
+  if (!partConfig) return
+  
+  const keys = Object.keys(partConfig)
+  if (index > keys.length) return
+  
+  const key = keys[index - 1]
+  const oldId = partConfig[key]
+  
+  const { value: newId } = await ElMessageBox.prompt(
+    `当前 ID: ${oldId || '未设置'}\n\n请输入新的舵机 ID:`,
+    '认领舵机',
+    {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      inputPattern: /^\d+$/,
+      inputErrorMessage: '请输入有效的数字 ID'
+    }
+  )
+  
+  if (newId) {
+    const newIdNum = parseInt(newId)
+    partConfig[key] = newIdNum
+    
+    ElMessage.success(`认领成功！ID: ${oldId || '无'} → ${newIdNum}`)
+    
+    await saveServoConfig()
+  }
+}
+
+// Ping 舵机（小幅度摆动 3 秒）
+const pingServo = async (servoId, port) => {
+  if (!servoId) {
+    ElMessage.warning('舵机 ID 无效')
+    return
+  }
+  
+  try {
+    const response = await axios.post('/api/ping', {
+      servo_id: servoId,
+      port: port
+    })
+    
+    if (response.data.code === 200) {
+      ElMessage.success(`已发送 Ping 命令：舵机 ${servoId}`)
+    } else {
+      ElMessage.error('Ping 失败: ' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('Ping 失败:', error)
+    ElMessage.error('Ping 失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 根据部位 Ping 舵机
+const pingServoByPart = async (part, index) => {
+  if (!robotConfig.value) {
+    ElMessage.warning('请先加载配置')
+    return
+  }
+  
+  const partMap = {
+    'left_arm': robotConfig.value.left_bus?.left_arm,
+    'right_arm': robotConfig.value.right_bus?.right_arm,
+    'base': robotConfig.value.left_bus?.base,
+    'neck': robotConfig.value.left_bus?.neck,
+    'lift_axis': robotConfig.value.left_bus?.lift_axis
+  }
+  
+  const partConfig = partMap[part]
+  if (!partConfig) return
+  
+  const keys = Object.keys(partConfig)
+  if (index > keys.length) return
+  
+  const key = keys[index - 1]
+  const servoId = partConfig[key]
+  
+  // 从扫描结果中找端口
+  const foundServo = foundServos.value.find(s => s.id === servoId)
+  const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+  
+  await pingServo(servoId, port)
+}
+
+// 校准舵机零点（设置当前位置为 0 度）
+const calibrateServo = async (servoId, port) => {
+  if (!servoId) {
+    ElMessage.warning('舵机 ID 无效')
+    return
+  }
+  
+  const confirmed = await ElMessageBox.confirm(
+    `确定要将舵机 ID=${servoId} 的当前位置设置为 0 度吗？`,
+    '校准零点',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+  
+  if (!confirmed) return
+  
+  try {
+    const response = await axios.post('/api/servo/calibrate', {
+      servo_id: servoId,
+      port: port
+    })
+    
+    if (response.data.code === 200) {
+      ElMessage.success(`校准成功！舵机 ${servoId} 当前位置已设为 0 度`)
+    } else {
+      ElMessage.error('校准失败: ' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('校准失败:', error)
+    ElMessage.error('校准失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 根据部位校准舵机
+const calibrateServoByPart = async (part, index) => {
+  if (!robotConfig.value) {
+    ElMessage.warning('请先加载配置')
+    return
+  }
+  
+  const partMap = {
+    'left_arm': robotConfig.value.left_bus?.left_arm,
+    'right_arm': robotConfig.value.right_bus?.right_arm,
+    'base': robotConfig.value.left_bus?.base,
+    'neck': robotConfig.value.left_bus?.neck,
+    'lift_axis': robotConfig.value.left_bus?.lift_axis
+  }
+  
+  const partConfig = partMap[part]
+  if (!partConfig) return
+  
+  const keys = Object.keys(partConfig)
+  if (index > keys.length) return
+  
+  const key = keys[index - 1]
+  const servoId = partConfig[key]
+  
+  // 从扫描结果中找端口
+  const foundServo = foundServos.value.find(s => s.id === servoId)
+  const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+  
+  await calibrateServo(servoId, port)
+}
+
+// 处理角度更新
+const handleUpdateAngle = async ({ servoId, angle }) => {
+  if (!servoId) return
+  
+  try {
+    // 从扫描结果中找端口
+    const foundServo = foundServos.value.find(s => s.id === servoId)
+    const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+    
+    const response = await axios.post('/api/servo/set_angle', {
+      servo_id: servoId,
+      angle: angle,
+      port: port
+    })
+    
+    if (response.data.code !== 200) {
+      ElMessage.error('设置角度失败: ' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('设置角度失败:', error)
+    ElMessage.error('设置角度失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 一键归零
+const resetAllServos = async () => {
+  if (foundServos.value.length === 0) {
+    ElMessage.warning('没有可归零的舵机')
+    return
+  }
+  
+  const confirmed = await ElMessageBox.confirm(
+    `确定要将所有 ${foundServos.value.length} 个舵机归零吗？\n所有舵机将移动到 0° 位置。`,
+    '一键归零',
+    {
+      confirmButtonText: '确定归零',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+  
+  if (!confirmed) return
+  
+  let successCount = 0
+  let failCount = 0
+  
+  for (const servo of foundServos.value) {
+    try {
+      const response = await axios.post('/api/servo/set_angle', {
+        servo_id: servo.id,
+        angle: 0,
+        port: servo.port
+      })
+      
+      if (response.data.code === 200) {
+        successCount++
+      } else {
+        failCount++
+      }
+    } catch (error) {
+      console.error(`舵机 ${servo.id} 归零失败:`, error)
+      failCount++
+    }
+  }
+  
+  if (failCount === 0) {
+    ElMessage.success(`所有舵机已归零（${successCount} 个）`)
+  } else {
+    ElMessage.warning(`归零完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+  }
+}
 
 onUnmounted(() => {
   // 无需清理
@@ -241,7 +750,7 @@ const scanServos = async () => {
   }
 }
 
-// 更新舵机角度（防抖：滑动停止后 100ms 发送）
+// 更新舵机角度（防抖：滑动停止后 500ms 发送）
 const updateServoAngle = (servo) => {
   // 清除之前的定时器
   if (updateTimer) {
@@ -258,7 +767,7 @@ const updateServoAngle = (servo) => {
       })
       
       if (response.data.code === 200) {
-        // 静默成功，不弹窗
+        // 静默成功
       } else {
         ElMessage.error('设置失败: ' + (response.data.message || '未知错误'))
       }
@@ -266,7 +775,7 @@ const updateServoAngle = (servo) => {
       console.error('设置角度失败:', error)
       ElMessage.error('设置失败: ' + (error.response?.data?.message || error.message))
     }
-  }, 100)  // 100ms 防抖
+  }, 50)  // 500ms 防抖
 }
 
 // 切换舵机模式
@@ -339,10 +848,38 @@ const stopServo = async (servo) => {
   }
 }
 
-// Ping单个舵机
-const pingServo = (id) => {
-  ElMessage.info(`Ping 舵机 ID=${id}`)
-  // TODO: 实现实际的Ping功能
+// 显示舵机详细信息
+const showServoInfo = async (servo) => {
+  try {
+    const response = await axios.post('/api/servo/get_info', {
+      servo_id: servo.id,
+      port: servo.port
+    })
+    
+    if (response.data.code === 200 && response.data.data) {
+      const info = response.data.data
+      const message = `
+ID: ${info.servo_id}
+位置: ${info.position} / 4095
+角度: ${info.angle.toFixed(1)}°
+电压: ${info.voltage}V
+温度: ${info.temperature}°C
+电流: ${info.current}mA
+模式: ${info.mode === 0 ? '位置' : '速度'}
+力矩: ${info.torque_enabled ? '开启' : '关闭'}
+      `.trim()
+      
+      await ElMessageBox.alert(message, `舵机 ${servo.id} 详细信息`, {
+        confirmButtonText: '确定',
+        type: 'info'
+      })
+    } else {
+      ElMessage.error('获取信息失败: ' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('获取信息失败:', error)
+    ElMessage.error('获取失败: ' + (error.response?.data?.message || error.message))
+  }
 }
 
 // 重置舵机
@@ -609,6 +1146,15 @@ const refreshPorts = async () => {
   background: #3d4149;
 }
 
+.btn-warning {
+  background: #f59e0b;
+  color: #ffffff;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
 .btn-sm {
   padding: 6px 12px;
   font-size: 12px;
@@ -667,25 +1213,32 @@ const refreshPorts = async () => {
 }
 
 .servo-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   padding: 16px;
   background: #16181d;
   border: 1px solid #2d3139;
   border-radius: 8px;
   transition: all 0.2s;
+  cursor: pointer;
 }
 
 .servo-item:hover {
   border-color: #3b82f6;
   background: #1a1c23;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 .servo-info {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.servo-details-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
 }
 
 .servo-id {
@@ -709,6 +1262,33 @@ const refreshPorts = async () => {
   color: #6b7280;
   font-family: 'JetBrains Mono', monospace;
   margin-top: 2px;
+}
+
+.servo-details {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.servo-details span {
+  white-space: nowrap;
+}
+
+.btn-fetch-info {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  margin-left: 8px;
+  transition: transform 0.2s;
+}
+
+.btn-fetch-info:hover {
+  transform: scale(1.2);
 }
 
 .servo-mode {
@@ -757,6 +1337,14 @@ const refreshPorts = async () => {
   transform: scale(1.1);
 }
 
+.servo-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.angle-slider,
 .speed-slider {
   flex: 1;
   height: 6px;
@@ -812,5 +1400,205 @@ const refreshPorts = async () => {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* 机器人硬件信息 */
+.robot-hardware-card {
+  margin-top: 20px;
+}
+
+.robot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.btn-claim {
+  padding: 8px 16px;
+  background: #3b82f6;
+  border: none;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-claim:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-claim:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.robot-layout {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.robot-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  max-width: 300px;
+}
+
+.robot-column.center {
+  flex: 1.5;
+}
+
+.robot-legs {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.robot-part {
+  background: #16181d;
+  border: 1px solid #2d3139;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  height: fit-content;
+}
+
+.part-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.servo-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.slot-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.btn-claim-single {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: #3b82f6;
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-claim-single:hover:not(:disabled) {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.btn-claim-single:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ping-single {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: #f59e0b;
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-ping-single:hover:not(:disabled) {
+  background: #d97706;
+  transform: scale(1.1);
+}
+
+.btn-ping-single:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-calibrate-single {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: #8b5cf6;
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-calibrate-single:hover:not(:disabled) {
+  background: #7c3aed;
+  transform: scale(1.1);
+}
+
+.btn-calibrate-single:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slot {
+  background: #2d3139;
+  border: 1px solid #3d4149;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  width: 100%;
+  transition: all 0.3s;
+}
+
+.slot.online {
+  color: #22c55e;
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.slot.offline {
+  color: #ef4444;
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.slot.empty {
+  color: #6b7280;
 }
 </style>
