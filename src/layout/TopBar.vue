@@ -20,7 +20,7 @@
       </button>
       <div class="status">
         <span class="status-dot" :class="{ connected: wsConnected }"></span>
-        <span class="status-text">{{ wsConnected ? '已连接' : '未连接' }}</span>
+        <span class="status-text">{{ wsConnected ? '已连接' : '未连接' }}{{wsConnected}}</span>
       </div>
     </div>
   </div>
@@ -53,6 +53,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import SettingsModal from '@/components/SettingsModal.vue'
 import { useConfig } from '@/composables/useConfig.js'
+import { wsClient } from '@/utils/websocket.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -71,7 +72,7 @@ const navItems = [
 ]
 
 const wsConnected = computed(() => {
-  return window.__globalStatus?.wsConnected || false
+  return wsClient.isConnected
 })
 
 function goHome() {

@@ -6,14 +6,7 @@ export function useRobot() {
   const showWarning = ref(false)
   const warningTimeout = ref(null)
 
-  const status = reactive({
-    left_arm_connected: false,
-    right_arm_connected: false,
-    vrConnected: false,
-    keyboardEnabled: false,
-    robotEngaged: false,
-    wsConnected: false
-  })
+  // 删除了 status 对象，因为现在所有数据都通过 updateStatus 实时返回
 
   async function toggleRobotEngagement() {
     const action = isRobotEngaged.value ? 'disconnect' : 'connect'
@@ -55,28 +48,30 @@ export function useRobot() {
   async function updateStatus() {
     try {
       const response = await fetch('/api/status')
-      const data = await response.json()
+      if (!response.ok) throw new Error('Network response was not ok')
       
-      status.left_arm_connected = data.left_arm_connected
-      status.right_arm_connected = data.right_arm_connected
-      status.vrConnected = data.vrConnected
-      status.keyboardEnabled = data.keyboardEnabled
-      status.robotEngaged = data.robotEngaged
-      
-      isRobotEngaged.value = data.robotEngaged
-      
-      if (showWarning.value && isRobotEngaged.value) {
-        showWarning.value = false
-      }
+      const result = await response.json()
+      console.log('✅ 获取到即时状态数据:', result)
+
+      // 假设后端返回格式为 { code: 200, data: {...} } 或直接是 {...}
+      // 这里我们兼容两种情况，提取出真正的业务数据
+      const businessData = result.data || result
+
+      // 仅更新内部必要的逻辑状态（如警告提示）
+      isRobotEngaged.value = !!businessData.robotEngaged
+      if (showWarning.value && isRobotEngaged.value) showWarning.value = false
+
+      // 【关键】返回包含 data 属性的对象，方便前端解构
+      return { data: businessData }
     } catch (error) {
-      console.error('Error fetching status:', error)
+      console.error('❌ 更新状态失败:', error)
+      return { data: null }
     }
   }
 
   return {
     isRobotEngaged,
     showWarning,
-    status,
     toggleRobotEngagement,
     showConnectionWarning,
     updateStatus

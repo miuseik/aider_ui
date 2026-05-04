@@ -1,8 +1,11 @@
 ```bash
-git add ./;git commit -m "还差分发到舵机的功能，舵机驱动已经写好";git push
+git add ./;git commit -m "获取终端信息";git push
 ```
 ```bash
 ssh root@121.40.151.10
+```
+```bash
+ssh gaoda@192.168.1.74
 ```
 ```bash
 cd /www/aider_ui; git pull;
