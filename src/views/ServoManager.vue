@@ -8,6 +8,7 @@
           <label>串口端口</label>
           <div class="port-select-wrapper">
             <select v-model="port" class="input-field">
+              <option value="all">🔍 扫描所有串口 (All)</option>
               <option v-for="p in availablePorts" :key="p" :value="p">{{ p }}</option>
             </select>
             <button @click="refreshPorts" class="btn-refresh" title="刷新端口列表">
@@ -216,7 +217,7 @@
           
           <RobotPart 
             title="身体"
-            :servos="getPartServos('lift_axis', robotConfig.left_bus?.lift_axis)"
+            :servos="getPartServos('lift_axis', robotConfig.base_lift_bus?.lift_axis)"
             part-name="lift_axis"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -227,7 +228,7 @@
           
           <RobotPart 
             title="底盘"
-            :servos="getPartServos('base', robotConfig.left_bus?.base)"
+            :servos="getPartServos('base', robotConfig.base_lift_bus?.base)"
             part-name="base"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -256,12 +257,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import axios from 'axios'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { wsClient } from '@/utils/websocket.js'
+import { useServoStore } from '@/stores/servo'
 import ServoInfoDisplay from '@/components/ServoInfoDisplay.vue'
 import RobotPart from '@/components/RobotPart.vue'
+
+const servoStore = useServoStore()
 
 // API 基础 URL - 使用相对路径，通过 Vite 代理转发
 const API_BASE = ''
@@ -270,16 +274,19 @@ const API_BASE = ''
 const port = ref('/dev/ttyACM0')
 const servoType = ref('st3215')
 const baudrate = ref(1000000)
-const availablePorts = ref([])
+
+// 使用 Pinia 中的状态
+const availablePorts = computed(() => servoStore.availablePorts)
+const foundServos = computed({
+  get: () => servoStore.scannedServos,
+  set: (val) => servoStore.setScannedServos(val)
+})
 
 // 扫描设置
 const startId = ref(1)
 const endId = ref(50)
 const scanning = ref(false)
 const currentScanId = ref(0)
-
-// 扫描结果
-const foundServos = ref([])
 
 // 机器人配置
 const robotConfig = ref(null)
@@ -341,7 +348,7 @@ const getPartServos = (partName, partConfig) => {
 provide('foundServos', foundServos)
 
 onMounted(async () => {
-  // 获取可用串口列表
+  // 获取可用串口列表并同步到 Pinia
   await fetchAvailablePorts()
   // 获取机器人配置
   await fetchRobotConfig()
@@ -679,10 +686,32 @@ const resetAllServos = async () => {
   
   if (!confirmed) return
   
+  // 开启 Loading
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在逐个归零舵机...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+  
   let successCount = 0
   let failCount = 0
+  let index = 0
   
-  for (const servo of foundServos.value) {
+  // 使用定时器逐个发送
+  const timer = setInterval(async () => {
+    if (index >= foundServos.value.length) {
+      clearInterval(timer)
+      loading.close()
+      
+      if (failCount === 0) {
+        ElMessage.success(`所有舵机已归零（${successCount} 个）`)
+      } else {
+        ElMessage.warning(`归零完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+      }
+      return
+    }
+    
+    const servo = foundServos.value[index]
     try {
       const response = await axios.post('/api/servo/set_angle', {
         servo_id: servo.id,
@@ -699,13 +728,9 @@ const resetAllServos = async () => {
       console.error(`舵机 ${servo.id} 归零失败:`, error)
       failCount++
     }
-  }
-  
-  if (failCount === 0) {
-    ElMessage.success(`所有舵机已归零（${successCount} 个）`)
-  } else {
-    ElMessage.warning(`归零完成：成功 ${successCount} 个，失败 ${failCount} 个`)
-  }
+    
+    index++
+  }, 1000) // 每 100ms 发送一个指令
 }
 
 onUnmounted(() => {
@@ -720,28 +745,38 @@ const scanServos = async () => {
   foundServos.value = []
   
   try {
-    // 通过 HTTP API 发送扫描命令（Vite 代理会自动转发 /api 前缀）
-    const response = await axios.post(`/api/scan_servos`, {
-      port: port.value,
-      servo_type: servoType.value,
-      start_id: startId.value,
-      end_id: endId.value,
-      baudrate: baudrate.value
-    })
-    
-    if (response.data.code === 200 && response.data.data?.servos) {
-      // 为每个舵机添加端口、角度、速度和模式信息
-      foundServos.value = response.data.data.servos.map(servo => ({
-        ...servo,
-        port: port.value,
-        angle: 0,
-        speed: 0,
-        mode: 'position'  // 默认位置模式
-      }))
-      ElMessage.success(`扫描完成，找到 ${foundServos.value.length} 个舵机`)
-    } else {
-      ElMessage.error('扫描失败: ' + (response.data.message || '未知错误'))
+    // 如果选择的是 'all'，则遍历所有可用端口
+    const portsToScan = port.value === 'all' ? availablePorts.value : [port.value]
+    let allFoundServos = []
+
+    for (const currentPort of portsToScan) {
+      try {
+        const response = await axios.post(`/api/scan_servos`, {
+          port: currentPort,
+          servo_type: servoType.value,
+          start_id: startId.value,
+          end_id: endId.value,
+          baudrate: baudrate.value
+        })
+        
+        if (response.data.code === 200 && response.data.data?.servos) {
+          const servos = response.data.data.servos.map(servo => ({
+            ...servo,
+            port: currentPort, // 记录该舵机所在的端口
+            angle: 0,
+            speed: 0,
+            mode: 'position'
+          }))
+          allFoundServos = [...allFoundServos, ...servos]
+        }
+      } catch (err) {
+        console.warn(`端口 ${currentPort} 扫描失败:`, err)
+      }
     }
+
+    // 更新 Pinia 状态
+    servoStore.setScannedServos(allFoundServos)
+    ElMessage.success(`扫描完成，在 ${portsToScan.length} 个端口中共找到 ${allFoundServos.length} 个舵机`)
   } catch (error) {
     console.error('扫描失败:', error)
     ElMessage.error('扫描失败: ' + (error.response?.data?.message || error.message))
@@ -751,14 +786,13 @@ const scanServos = async () => {
 }
 
 // 更新舵机角度（防抖：滑动停止后 500ms 发送）
-const updateServoAngle = (servo) => {
+const updateServoAngle = async(servo) => {
   // 清除之前的定时器
   if (updateTimer) {
     clearTimeout(updateTimer)
   }
   
   // 设置新定时器
-  updateTimer = setTimeout(async () => {
     try {
       const response = await axios.post('/api/servo/set_angle', {
         servo_id: servo.id,
@@ -775,7 +809,6 @@ const updateServoAngle = (servo) => {
       console.error('设置角度失败:', error)
       ElMessage.error('设置失败: ' + (error.response?.data?.message || error.message))
     }
-  }, 50)  // 500ms 防抖
 }
 
 // 切换舵机模式
@@ -981,13 +1014,15 @@ const refreshScan = () => {
 const fetchAvailablePorts = async () => {
   try {
     const response = await axios.get('/api/list_ports')
-    availablePorts.value = response.data.data?.ports || []
-    if (availablePorts.value.length > 0) {
-      port.value = availablePorts.value[0]
+    const ports = response.data.data?.ports || []
+    servoStore.setAvailablePorts(ports)
+    if (ports.length > 0 && port.value === '/dev/ttyACM0') {
+      port.value = ports[0]
     }
   } catch (error) {
     console.error('获取串口列表失败:', error)
-    availablePorts.value = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
+    const defaultPorts = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
+    servoStore.setAvailablePorts(defaultPorts)
   }
 }
 

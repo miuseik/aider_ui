@@ -160,21 +160,17 @@ const getServoStatus = (servoId) => {
 
 // 获取舵机中文标签
 const getServoLabel = (key) => {
+  const isRight = props.partName === 'right_arm'
+  const prefix = isRight ? '🦿 右' : '🦾 左'
+  
   const labelMap = {
-    // 左臂
-    'shoulder_pan': '🦾 左肩旋转',
-    'shoulder_lift': '🦾 左肩升降',
-    'elbow_flex': '🦾 左肘弯曲',
-    'wrist_flex': '🦾 左手腕弯曲',
-    'wrist_roll': '🦾 左手腕旋转',
-    'gripper': '🦾 左夹爪',
-    // 右臂
-    'right_shoulder_pan': '🦿 右肩旋转',
-    'right_shoulder_lift': '🦿 右肩升降',
-    'right_elbow_flex': '🦿 右肘弯曲',
-    'right_wrist_flex': '🦿 右手腕弯曲',
-    'right_wrist_roll': '🦿 右手腕旋转',
-    'right_gripper': '🦿 右夹爪',
+    // 双臂通用关节名
+    'shoulder_pan': `${prefix}肩旋转`,
+    'shoulder_lift': `${prefix}肩升降`,
+    'elbow_flex': `${prefix}肘弯曲`,
+    'wrist_flex': `${prefix}手腕弯曲`,
+    'wrist_roll': `${prefix}手腕旋转`,
+    'gripper': `${prefix}夹爪`,
     // 底盘（正三角）
     'front_wheel': '⚙️ 前轮',
     'left_wheel': '⚙️ 左轮',

@@ -72,7 +72,7 @@ yi<template>
           </div>
         </div>
 <!--        刷新状态-->
-        <div class="toolbar-right">
+        <div >
           <!-- 刷新状态按钮 -->
           <el-button
             type="info"
@@ -84,11 +84,10 @@ yi<template>
           </el-button>
           <!-- 连接机器人按钮 -->
           <el-button
-            type="primary"
+            :type="isRobotEngaged ? 'danger' : 'primary'"
             @click="toggleRobotEngagement"
-            class="engage-btn"
           >
-            {{ isRobotEngaged ? '🔌 断开' : '🔌 连接' }}
+            {{ isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接' }}
           </el-button>
         </div>
       </div>
@@ -269,12 +268,6 @@ onUnmounted(() => {
   color: rgba(100, 200, 255, 0.9);
   letter-spacing: 3px;
   text-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .ws-btn {

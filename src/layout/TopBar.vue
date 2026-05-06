@@ -32,7 +32,6 @@
       title="系统设置"
       width="700px"
       :close-on-click-modal="false"
-      :z-index="10001"
     >
       <SettingsModal 
         :config="config"
@@ -131,7 +130,6 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 30px;
-  z-index: 10000;
   border-bottom: 1px solid rgba(0, 255, 136, 0.2);
 }
 

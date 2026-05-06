@@ -17,7 +17,7 @@ export function useRobot() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action })
       })
-      const data = await response.json()
+      const {data} = await response.json()
       
       if (data.success) {
         isRobotEngaged.value = !isRobotEngaged.value

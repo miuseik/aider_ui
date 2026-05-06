@@ -13,6 +13,7 @@
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.15.2",
     "element-plus": "^2.13.7",
+    "pinia": "^3.0.4",
     "sass": "^1.99.0",
     "three": "^0.184.0",
     "vue": "^3.4.0",
