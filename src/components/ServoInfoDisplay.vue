@@ -20,8 +20,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
+import { eventBus } from '@/utils/eventBus.js'
 
 const props = defineProps({
   servoId: {
@@ -46,9 +47,14 @@ const displayPort = computed(() => {
   return props.info?.port || props.port
 })
 
+// ✅ 事件名称：servo-info-refresh-{servoId}
+const eventName = computed(() => `servo-info-refresh-${props.servoId}`)
+
+// ✅ 获取信息的函数
 const fetchInfo = async () => {
   if (loading.value) return
   
+  console.log('[ServoInfoDisplay] 开始获取舵机信息，ID:', props.servoId)
   loading.value = true
   try {
     const response = await axios.post('/api/servo/get_info', {
@@ -57,14 +63,34 @@ const fetchInfo = async () => {
     })
     
     if (response.data.code === 200 && response.data.data) {
+      console.log('[ServoInfoDisplay] 获取成功:', response.data.data)
       emit('update:info', response.data.data)
+    } else {
+      console.warn('[ServoInfoDisplay] 获取失败:', response.data)
     }
   } catch (error) {
-    console.error('获取舵机信息失败:', error)
+    console.error('[ServoInfoDisplay] 获取舵机信息失败:', error)
   } finally {
     loading.value = false
   }
 }
+
+// ✅ 组件挂载时监听事件
+onMounted(() => {
+  console.log('[ServoInfoDisplay] 组件挂载，开始监听事件:', eventName.value)
+  eventBus.on(eventName.value, fetchInfo)
+})
+
+// ✅ 组件卸载时取消监听
+onUnmounted(() => {
+  console.log('[ServoInfoDisplay] 组件卸载，取消监听事件:', eventName.value)
+  eventBus.off(eventName.value, fetchInfo)
+})
+
+// ✅ 暴露方法给父组件调用（可选）
+defineExpose({
+  fetchInfo
+})
 </script>
 
 <style scoped>

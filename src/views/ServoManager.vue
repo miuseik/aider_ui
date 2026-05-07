@@ -262,6 +262,7 @@ import axios from 'axios'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { wsClient } from '@/utils/websocket.js'
 import { useServoStore } from '@/stores/servo'
+import { eventBus } from '@/utils/eventBus.js'
 import ServoInfoDisplay from '@/components/ServoInfoDisplay.vue'
 import RobotPart from '@/components/RobotPart.vue'
 
@@ -390,19 +391,16 @@ const claimServos = async () => {
   foundServos.value = []
   
   try {
-    // 扫描左臂总线
+    // 扫描左臂总线（新代码自动识别品牌）
     const leftResponse = await axios.post('/api/scan_servos', {
       port: robotConfig.value.left_bus.port,
-      servo_type: 'st3215',
       start_id: 1,
-      end_id: 20,
-      baudrate: 1000000
+      end_id: 253  // 扩大扫描范围
     })
     
     if (leftResponse.data.code === 200 && leftResponse.data.data?.servos) {
       foundServos.value = leftResponse.data.data.servos.map(servo => ({
         ...servo,
-        port: robotConfig.value.left_bus.port,
         angle: 0,
         speed: 0,
         mode: 'position'
@@ -412,16 +410,13 @@ const claimServos = async () => {
     // 扫描右臂总线
     const rightResponse = await axios.post('/api/scan_servos', {
       port: robotConfig.value.right_bus.port,
-      servo_type: 'st3215',
       start_id: 1,
-      end_id: 20,
-      baudrate: 1000000
+      end_id: 253
     })
     
     if (rightResponse.data.code === 200 && rightResponse.data.data?.servos) {
       const rightServos = rightResponse.data.data.servos.map(servo => ({
         ...servo,
-        port: robotConfig.value.right_bus.port,
         angle: 0,
         speed: 0,
         mode: 'position'
@@ -567,7 +562,7 @@ const pingServoByPart = async (part, index) => {
   if (index > keys.length) return
   
   const key = keys[index - 1]
-  const servoId = partConfig[key]
+  const servoId = partConfig[key].id
   
   // 从扫描结果中找端口
   const foundServo = foundServos.value.find(s => s.id === servoId)
@@ -596,7 +591,7 @@ const calibrateServo = async (servoId, port) => {
   if (!confirmed) return
   
   try {
-    const response = await axios.post('/api/servo/calibrate', {
+    const response = await axios.post('/api/calibrate', {
       servo_id: servoId,
       port: port
     })
@@ -634,7 +629,7 @@ const calibrateServoByPart = async (part, index) => {
   if (index > keys.length) return
   
   const key = keys[index - 1]
-  const servoId = partConfig[key]
+  const servoId = partConfig[key].id
   
   // 从扫描结果中找端口
   const foundServo = foundServos.value.find(s => s.id === servoId)
@@ -643,27 +638,58 @@ const calibrateServoByPart = async (part, index) => {
   await calibrateServo(servoId, port)
 }
 
-// 处理角度更新
-const handleUpdateAngle = async ({ servoId, angle }) => {
-  if (!servoId) return
-  
+// ==================== 工具方法 ====================
+
+/**
+ * 设置舵机角度（统一接口）
+ */
+const setServoAngle = async (servoId, angle, port) => {
   try {
-    // 从扫描结果中找端口
-    const foundServo = foundServos.value.find(s => s.id === servoId)
-    const port = foundServo ? foundServo.port : '/dev/ttyACM0'
-    
     const response = await axios.post('/api/servo/set_angle', {
       servo_id: servoId,
       angle: angle,
       port: port
     })
-    
-    if (response.data.code !== 200) {
-      ElMessage.error('设置角度失败: ' + (response.data.message || '未知错误'))
-    }
+    return response.data.code === 200
   } catch (error) {
-    console.error('设置角度失败:', error)
+    console.error(`设置舵机 ${servoId} 角度失败:`, error)
     ElMessage.error('设置角度失败: ' + (error.response?.data?.message || error.message))
+    return false
+  }
+}
+
+/**
+ * 设置舵机速度（统一接口）
+ */
+const setServoSpeed = async (servoId, speed, port) => {
+  try {
+    const response = await axios.post('/api/servo/set_speed', {
+      servo_id: servoId,
+      speed: speed,
+      port: port
+    })
+    return response.data.code === 200
+  } catch (error) {
+    console.error(`设置舵机 ${servoId} 速度失败:`, error)
+    ElMessage.error('设置速度失败: ' + (error.response?.data?.message || error.message))
+    return false
+  }
+}
+
+// 处理角度更新
+const handleUpdateAngle = async ({ servoId, angle }) => {
+  if (!servoId) return
+  
+  // 从扫描结果中找端口
+  const foundServo = foundServos.value.find(s => s.id === servoId)
+  const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+  
+  const success = await setServoAngle(servoId, angle, port)
+  
+  // ✅ 如果设置成功，触发刷新事件
+  if (success) {
+    console.log('[ServoManager] 触发刷新事件:', `servo-info-refresh-${servoId}`)
+    eventBus.emit(`servo-info-refresh-${servoId}`)
   }
 }
 
@@ -713,14 +739,12 @@ const resetAllServos = async () => {
     
     const servo = foundServos.value[index]
     try {
-      const response = await axios.post('/api/servo/set_angle', {
-        servo_id: servo.id,
-        angle: 0,
-        port: servo.port
-      })
-      
-      if (response.data.code === 200) {
+      const success = await setServoAngle(servo.id, 0, servo.port)
+      if (success) {
         successCount++
+        // ✅ 触发刷新事件
+        console.log('[ServoManager] 触发刷新事件:', `servo-info-refresh-${servo.id}`)
+        eventBus.emit(`servo-info-refresh-${servo.id}`)
       } else {
         failCount++
       }
@@ -751,18 +775,16 @@ const scanServos = async () => {
 
     for (const currentPort of portsToScan) {
       try {
+        // 新代码自动识别品牌，无需 servo_type
         const response = await axios.post(`/api/scan_servos`, {
           port: currentPort,
-          servo_type: servoType.value,
           start_id: startId.value,
-          end_id: endId.value,
-          baudrate: baudrate.value
+          end_id: endId.value
         })
         
         if (response.data.code === 200 && response.data.data?.servos) {
           const servos = response.data.data.servos.map(servo => ({
             ...servo,
-            port: currentPort, // 记录该舵机所在的端口
             angle: 0,
             speed: 0,
             mode: 'position'
@@ -793,22 +815,13 @@ const updateServoAngle = async(servo) => {
   }
   
   // 设置新定时器
-    try {
-      const response = await axios.post('/api/servo/set_angle', {
-        servo_id: servo.id,
-        angle: servo.angle,
-        port: servo.port
-      })
-      
-      if (response.data.code === 200) {
-        // 静默成功
-      } else {
-        ElMessage.error('设置失败: ' + (response.data.message || '未知错误'))
-      }
-    } catch (error) {
-      console.error('设置角度失败:', error)
-      ElMessage.error('设置失败: ' + (error.response?.data?.message || error.message))
-    }
+  const success = await setServoAngle(servo.id, servo.angle, servo.port)
+  
+  // ✅ 如果设置成功，触发刷新事件
+  if (success) {
+    console.log('[ServoManager] 触发刷新事件:', `servo-info-refresh-${servo.id}`)
+    eventBus.emit(`servo-info-refresh-${servo.id}`)
+  }
 }
 
 // 切换舵机模式
@@ -841,77 +854,17 @@ const updateServoSpeed = (servo) => {
   
   // 设置新定时器
   updateTimer = setTimeout(async () => {
-    try {
-      const response = await axios.post('/api/servo/set_speed', {
-        servo_id: servo.id,
-        speed: servo.speed,
-        port: servo.port
-      })
-      
-      if (response.data.code === 200) {
-        // 静默成功
-      } else {
-        ElMessage.error('设置失败: ' + (response.data.message || '未知错误'))
-      }
-    } catch (error) {
-      console.error('设置速度失败:', error)
-      ElMessage.error('设置失败: ' + (error.response?.data?.message || error.message))
-    }
+    await setServoSpeed(servo.id, servo.speed, servo.port)
   }, 100)  // 100ms 防抖
 }
 
 // 停止舵机
 const stopServo = async (servo) => {
-  try {
-    const response = await axios.post('/api/servo/set_speed', {
-      servo_id: servo.id,
-      speed: 0,
-      port: servo.port
-    })
-    
-    if (response.data.code === 200) {
-      servo.speed = 0
-      ElMessage.success(`舵机 ${servo.id} 已停止`)
-    } else {
-      ElMessage.error('停止失败: ' + (response.data.message || '未知错误'))
-    }
-  } catch (error) {
-    console.error('停止失败:', error)
-    ElMessage.error('停止失败: ' + (error.response?.data?.message || error.message))
-  }
-}
-
-// 显示舵机详细信息
-const showServoInfo = async (servo) => {
-  try {
-    const response = await axios.post('/api/servo/get_info', {
-      servo_id: servo.id,
-      port: servo.port
-    })
-    
-    if (response.data.code === 200 && response.data.data) {
-      const info = response.data.data
-      const message = `
-ID: ${info.servo_id}
-位置: ${info.position} / 4095
-角度: ${info.angle.toFixed(1)}°
-电压: ${info.voltage}V
-温度: ${info.temperature}°C
-电流: ${info.current}mA
-模式: ${info.mode === 0 ? '位置' : '速度'}
-力矩: ${info.torque_enabled ? '开启' : '关闭'}
-      `.trim()
-      
-      await ElMessageBox.alert(message, `舵机 ${servo.id} 详细信息`, {
-        confirmButtonText: '确定',
-        type: 'info'
-      })
-    } else {
-      ElMessage.error('获取信息失败: ' + (response.data.message || '未知错误'))
-    }
-  } catch (error) {
-    console.error('获取信息失败:', error)
-    ElMessage.error('获取失败: ' + (error.response?.data?.message || error.message))
+  const success = await setServoSpeed(servo.id, 0, servo.port)
+  
+  if (success) {
+    servo.speed = 0
+    ElMessage.success(`舵机 ${servo.id} 已停止`)
   }
 }
 
