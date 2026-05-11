@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "准备驱动硬件了";git push
+git add ./;git commit -m "灵足角度模式和速度模式ok";git push
 ```
 ```bash
 ssh root@121.40.151.10
