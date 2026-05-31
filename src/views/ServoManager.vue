@@ -18,10 +18,11 @@
         </div>
 
         <div class="form-group">
-          <label>舵机类型</label>
+          <label>电机类型</label>
           <select v-model="servoType" class="input-field">
             <option value="st3215">ST3215 (飞特)</option>
             <option value="lx16a">LX-16A (幻尔)</option>
+            <option value="robstride">RS-00 (灵足 CAN)</option>
           </select>
         </div>
 
@@ -258,6 +259,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import axios from 'axios'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { wsClient } from '@/utils/websocket.js'
 import { useServoStore } from '@/stores/servo'
@@ -275,6 +277,19 @@ const API_BASE = ''
 const port = ref('/dev/ttyACM0')
 const servoType = ref('st3215')
 const baudrate = ref(1000000)
+
+// ✅ 监听电机类型变化，自动切换端口
+watch(servoType, (newType) => {
+  if (newType === 'robstride') {
+    // RobStride 使用 CAN 接口
+    port.value = 'can0'
+  } else {
+    // 其他类型使用串口
+    if (port.value === 'can0') {
+      port.value = '/dev/ttyACM0'
+    }
+  }
+})
 
 // 使用 Pinia 中的状态
 const availablePorts = computed(() => servoStore.availablePorts)
@@ -914,7 +929,13 @@ const refreshScan = () => {
 // 获取可用串口列表
 const fetchAvailablePorts = async () => {
   try {
+
+
     const response = await api.listPorts()
+     // ✅ 添加 CAN 接口
+    if (!ports.includes('can0')) {
+      ports.unshift('can0')  // 放在最前面
+    }
     const ports = response.data?.ports || []
     servoStore.setAvailablePorts(ports)
     if (ports.length > 0 && port.value === '/dev/ttyACM0') {
@@ -922,7 +943,7 @@ const fetchAvailablePorts = async () => {
     }
   } catch (error) {
     console.error('获取串口列表失败:', error)
-    const defaultPorts = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
+    const defaultPorts = ['can0', '/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
     servoStore.setAvailablePorts(defaultPorts)
   }
 }
