@@ -258,13 +258,13 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
-import axios from 'axios'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { wsClient } from '@/utils/websocket.js'
 import { useServoStore } from '@/stores/servo'
 import { eventBus } from '@/utils/eventBus.js'
 import ServoInfoDisplay from '@/components/ServoInfoDisplay.vue'
 import RobotPart from '@/components/RobotPart.vue'
+import * as api from '@/api'
 
 const servoStore = useServoStore()
 
@@ -358,9 +358,9 @@ onMounted(async () => {
 // 获取机器人配置
 const fetchRobotConfig = async () => {
   try {
-    const response = await axios.post('/api/get-servo-ids')
-    if (response.data.code === 200) {
-      robotConfig.value = response.data.data
+    const response = await api.getServoIds()
+    if (response.code === 200) {
+      robotConfig.value = response.data
     }
   } catch (error) {
     console.error('获取配置失败:', error)
@@ -392,14 +392,10 @@ const claimServos = async () => {
   
   try {
     // 扫描左臂总线（新代码自动识别品牌）
-    const leftResponse = await axios.post('/api/scan_servos', {
-      port: robotConfig.value.left_bus.port,
-      start_id: 1,
-      end_id: 253  // 扩大扫描范围
-    })
+    const leftResponse = await api.scanServos(robotConfig.value.left_bus.port, 1, 253)
     
-    if (leftResponse.data.code === 200 && leftResponse.data.data?.servos) {
-      foundServos.value = leftResponse.data.data.servos.map(servo => ({
+    if (leftResponse.code === 200 && leftResponse.data?.servos) {
+      foundServos.value = leftResponse.data.servos.map(servo => ({
         ...servo,
         angle: 0,
         speed: 0,
@@ -408,14 +404,10 @@ const claimServos = async () => {
     }
     
     // 扫描右臂总线
-    const rightResponse = await axios.post('/api/scan_servos', {
-      port: robotConfig.value.right_bus.port,
-      start_id: 1,
-      end_id: 253
-    })
+    const rightResponse = await api.scanServos(robotConfig.value.right_bus.port, 1, 253)
     
-    if (rightResponse.data.code === 200 && rightResponse.data.data?.servos) {
-      const rightServos = rightResponse.data.data.servos.map(servo => ({
+    if (rightResponse.code === 200 && rightResponse.data?.servos) {
+      const rightServos = rightResponse.data.servos.map(servo => ({
         ...servo,
         angle: 0,
         speed: 0,
@@ -431,7 +423,6 @@ const claimServos = async () => {
     
   } catch (error) {
     console.error('扫描失败:', error)
-    ElMessage.error('扫描失败: ' + (error.response?.data?.message || error.message))
   } finally {
     scanning.value = false
   }
@@ -441,11 +432,11 @@ const claimServos = async () => {
 const saveServoConfig = async () => {
   try {
     console.log('保存配置:', JSON.stringify(robotConfig.value, null, 2))
-    const response = await axios.post('/api/put-servo-ids', {
+    const response = await api.putServoIds({
       config: robotConfig.value
     })
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('配置已保存到 server')
       // 通知 Terminal 重载配置
       await notifyTerminalReload()
@@ -524,19 +515,13 @@ const pingServo = async (servoId, port) => {
   }
   
   try {
-    const response = await axios.post('/api/ping', {
-      servo_id: servoId,
-      port: port
-    })
+    const response = await api.pingServo(servoId, port)
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success(`已发送 Ping 命令：舵机 ${servoId}`)
-    } else {
-      ElMessage.error('Ping 失败: ' + (response.data.message || '未知错误'))
     }
   } catch (error) {
     console.error('Ping 失败:', error)
-    ElMessage.error('Ping 失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -591,19 +576,13 @@ const calibrateServo = async (servoId, port) => {
   if (!confirmed) return
   
   try {
-    const response = await axios.post('/api/calibrate', {
-      servo_id: servoId,
-      port: port
-    })
+    const response = await api.calibrateMotor('left', `servo_${servoId}`, 0.0)
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success(`校准成功！舵机 ${servoId} 当前位置已设为 0 度`)
-    } else {
-      ElMessage.error('校准失败: ' + (response.data.message || '未知错误'))
     }
   } catch (error) {
     console.error('校准失败:', error)
-    ElMessage.error('校准失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -645,15 +624,10 @@ const calibrateServoByPart = async (part, index) => {
  */
 const setServoAngle = async (servoId, angle, port) => {
   try {
-    const response = await axios.post('/api/servo/set_angle', {
-      servo_id: servoId,
-      angle: angle,
-      port: port
-    })
-    return response.data.code === 200
+    const response = await api.setServoAngle(servoId, angle, port)
+    return response.code === 200
   } catch (error) {
     console.error(`设置舵机 ${servoId} 角度失败:`, error)
-    ElMessage.error('设置角度失败: ' + (error.response?.data?.message || error.message))
     return false
   }
 }
@@ -663,15 +637,10 @@ const setServoAngle = async (servoId, angle, port) => {
  */
 const setServoSpeed = async (servoId, speed, port) => {
   try {
-    const response = await axios.post('/api/servo/set_speed', {
-      servo_id: servoId,
-      speed: speed,
-      port: port
-    })
-    return response.data.code === 200
+    const response = await api.setServoSpeed(servoId, speed, port)
+    return response.code === 200
   } catch (error) {
     console.error(`设置舵机 ${servoId} 速度失败:`, error)
-    ElMessage.error('设置速度失败: ' + (error.response?.data?.message || error.message))
     return false
   }
 }
@@ -827,21 +796,13 @@ const updateServoAngle = async(servo) => {
 // 切换舵机模式
 const switchMode = async (servo) => {
   try {
-    const action = servo.mode === 'position' ? 'set_position_mode' : 'set_speed_mode'
-    const response = await axios.post('/api/servo/set_mode', {
-      servo_id: servo.id,
-      mode: servo.mode,
-      port: servo.port
-    })
+    const response = await api.setServoMode(servo.id, servo.mode, servo.port)
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success(`舵机 ${servo.id} 已切换到${servo.mode === 'position' ? '位置' : '速度'}模式`)
-    } else {
-      ElMessage.error('切换失败: ' + (response.data.message || '未知错误'))
     }
   } catch (error) {
     console.error('切换模式失败:', error)
-    ElMessage.error('切换失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -883,19 +844,13 @@ const resetServo = async (servo) => {
   if (!confirmed) return
   
   try {
-    const response = await axios.post('/api/servo/reset', {
-      servo_id: servo.id,
-      port: servo.port
-    })
+    const response = await api.resetServo(servo.id, servo.port)
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('重置成功，请断电重启舵机')
-    } else {
-      ElMessage.error('重置失败: ' + (response.data.message || '未知错误'))
     }
   } catch (error) {
     console.error('重置失败:', error)
-    ElMessage.error('重置失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -927,22 +882,15 @@ const changeServoId = async (servo) => {
   if (!confirmed) return
   
   try {
-    const response = await axios.post('/api/servo/set_id', {
-      old_id: servo.id,
-      new_id: parseInt(newId),
-      port: servo.port
-    })
+    const response = await api.setServoId(servo.id, parseInt(newId), servo.port)
     
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('ID 修改成功，请断电重启舵机')
       // 从列表中移除该舵机
       foundServos.value = foundServos.value.filter(s => s.id !== servo.id)
-    } else {
-      ElMessage.error('修改失败: ' + (response.data.message || '未知错误'))
     }
   } catch (error) {
     console.error('修改ID失败:', error)
-    ElMessage.error('修改失败: ' + (error.response?.data?.message || error.message))
   }
 }
 
@@ -966,8 +914,8 @@ const refreshScan = () => {
 // 获取可用串口列表
 const fetchAvailablePorts = async () => {
   try {
-    const response = await axios.get('/api/list_ports')
-    const ports = response.data.data?.ports || []
+    const response = await api.listPorts()
+    const ports = response.data?.ports || []
     servoStore.setAvailablePorts(ports)
     if (ports.length > 0 && port.value === '/dev/ttyACM0') {
       port.value = ports[0]

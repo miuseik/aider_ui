@@ -21,7 +21,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import axios from 'axios'
+import * as api from '@/api'
 import { eventBus } from '@/utils/eventBus.js'
 
 const props = defineProps({
@@ -57,16 +57,11 @@ const fetchInfo = async () => {
   console.log('[ServoInfoDisplay] 开始获取舵机信息，ID:', props.servoId)
   loading.value = true
   try {
-    const response = await axios.post('/api/servo/get_info', {
-      servo_id: props.servoId,
-      port: props.port
-    })
+    const response = await api.getServoInfo(props.servoId, props.port)
     
-    if (response.data.code === 200 && response.data.data) {
-      console.log('[ServoInfoDisplay] 获取成功:', response.data.data)
-      emit('update:info', response.data.data)
-    } else {
-      console.warn('[ServoInfoDisplay] 获取失败:', response.data)
+    if (response.code === 200 && response.data) {
+      console.log('[ServoInfoDisplay] 获取成功:', response.data)
+      emit('update:info', response.data)
     }
   } catch (error) {
     console.error('[ServoInfoDisplay] 获取舵机信息失败:', error)

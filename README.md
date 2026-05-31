@@ -1,6 +1,6 @@
 ```bash
-git add ./;git commit -m "准备驱动硬件了";git push
-```
+git add ./;git commit -m "封装了api，统一用axios";git push
+``` 
 ```bash
 ssh root@121.40.151.10
 ```
@@ -20,6 +20,9 @@ npm run build;
 ```
 ```bash
 npm run dev;
+```
+```bash
+npm i
 ```
 ```bash
 git checkout 。/

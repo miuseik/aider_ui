@@ -56,7 +56,7 @@ class WebSocketClient {
       const data = decodeMessage(rawData)
       this.notifyHandlers(data)
     } catch (error) {
-      console.error('消息解析错误:', error)
+      console.error('❌ [WebSocketClient] 消息解析错误:', error)
     }
   }
 
@@ -68,11 +68,11 @@ class WebSocketClient {
   }
 
   notifyHandlers(data) {
-    this.messageHandlers.forEach(handler => {
+    this.messageHandlers.forEach((handler, index) => {
       try {
         handler(data)
       } catch (error) {
-        console.error('消息处理器错误:', error)
+        console.error(`❌ 消息处理器 #${index + 1} 错误:`, error)
       }
     })
   }

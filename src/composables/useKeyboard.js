@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { toggleKeyboard, sendKeypress } from '@/api'
 
 export function useKeyboard(isRobotEngaged, showConnectionWarning) {
   const isKeyboardEnabled = ref(false)
@@ -36,21 +37,13 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning) {
     const action = isKeyboardEnabled.value ? 'disable' : 'enable'
     
     try {
-      const response = await fetch('/api/keyboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action })
-      })
-      const data = await response.json()
+      const data = await toggleKeyboard(action)
       
-      if (data.code === 200 && data.data?.success) {
+      if (data.data?.success) {
         isKeyboardEnabled.value = !isKeyboardEnabled.value
-      } else {
-        ElMessage.error('切换键盘控制失败: ' + (data.message || '未知错误'))
       }
     } catch (error) {
       console.error('Error toggling keyboard control:', error)
-      ElMessage.error('与服务器通信错误')
     }
   }
 
@@ -63,11 +56,7 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning) {
     if (!key) return
 
     try {
-      await fetch('/api/keypress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, action })
-      })
+      await sendKeypress(key, action)
     } catch (error) {
       console.error('Error sending key command:', error)
     }

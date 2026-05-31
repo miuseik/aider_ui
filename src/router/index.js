@@ -31,6 +31,11 @@ const routes = [
         component: () => import('../views/ServoManager.vue')
       },
       {
+        path: '/simulation',
+        name: 'Simulation',
+        component: () => import('../views/SimulationViewer.vue')
+      },
+      {
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')
