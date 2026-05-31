@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "封装了api，统一用axios";git push
+git add ./;git commit -m "删除自己写的rtc，使用artc";git push
 ``` 
 ```bash
 ssh root@121.40.151.10
