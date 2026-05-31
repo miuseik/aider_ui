@@ -1,20 +1,4 @@
 <template>
-    <!-- 连接/断开视频按钮 -->
-    <button 
-      class="connect-video-btn"
-      @click="toggleVideo"
-    >
-      {{ videoConnected ? '⏸ 断开' : '▶️ 连接视频' }}
-    </button>
-    
-    <!-- 调试:显示视频元素到屏幕左上角 -->
-<!--    <button -->
-<!--      class="debug-video-btn"-->
-<!--      @click="showDebugVideo"-->
-<!--    >-->
-<!--      🔍 显示视频-->
-<!--    </button>-->
-    
     <div class="vr-container" ref="sceneRef">
       <!-- A-Frame VR 场景根节点,隐藏默认VR按钮 -->
       <a-scene vr-mode-ui="enabled: true;">
@@ -51,9 +35,6 @@
         
         <!-- 数据中心面板容器(显示VR数据的3D屏幕,在面前1.5米处,向下倾斜15度) -->
         <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
-        
-        <!-- 视频屏幕容器(WebRTC视频将映射到这里,在头顶1.5米,前方2米处) -->
-        <a-entity id="videoScreen" position="0 1.5 -2" rotation="0 0 0"></a-entity>
       </a-scene>
     </div>
 </template>
@@ -65,7 +46,6 @@ import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'           // WebSocket 客户端
 import { getFullVRData, getButtonName } from '../utils/vrData.js'  // VR 数据工具
 import { createAxisIndicators } from '../utils/vrHelpers.js'       // 坐标轴指示器
-import { WebRTCVideoManager } from '../utils/webRTCManager'        // WebRTC 管理器
 
 // ========== 响应式变量 ==========
 const sceneRef = ref(null)  // A-Frame 场景引用
@@ -76,20 +56,11 @@ let dataPanelContext = null      // Canvas 2D 上下文
 let dataPanelTexture = null      // Canvas 纹理
 let animationId = null           // 动画帧 ID
 
-// 视频屏幕相关
-let videoScreenMesh = null       // 视频 3D 网格
-let videoElement = null          // HTML video 元素
-let videoManager = null          // WebRTC 管理器实例
-
-// WebSocket URL (从环境变量读取)
-const WS_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
-
 // ========== 手柄状态 ==========
 let leftGripDown = false       // 左手握把按下
 let rightGripDown = false      // 右手握把按下
 let leftTriggerDown = false    // 左手扳机按下
 let rightTriggerDown = false   // 右手扳机按下
-let videoConnected = false     // 视频是否已连接
 
 // 相对旋转跟踪(用于计算握把按下时的相对角度变化)
 let leftGripInitialRotation = null      // 左手初始旋转
@@ -111,7 +82,6 @@ onMounted(() => {
   setTimeout(() => {
     initControllerUpdater()      // 初始化手柄控制器(监听按键、创建坐标轴指示器)
     initDataPanel()              // 初始化数据中心面板(CanvasTexture显示VR数据)
-    initVideoScreen()            // 初始化视频屏幕(WebRTC视频映射到3D平面)
     setupRendererAnimationLoop() // 设置渲染循环(每帧更新数据面板和视频纹理)
   }, 500)
 })
@@ -125,12 +95,6 @@ onUnmounted(() => {
   
   // 清理事件监听器
   cleanupEventListeners()
-  
-  // 清理 WebRTC 连接
-  if (videoManager) {
-    videoManager.cleanup()
-    videoManager = null
-  }
 })
 
 // ========== 工具函数 ==========
@@ -493,7 +457,6 @@ function setupRendererAnimationLoop() {
               updateRelativeRotation()
               
               updateDataPanelInFrame(0, frame, referenceSpace, session)
-              updateVideoScreenInFrame()  // 更新视频屏幕
             }
           }
         }

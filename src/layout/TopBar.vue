@@ -18,9 +18,6 @@
       <button class="settings-btn" @click="openSettings" title="系统设置">
         <span>⚙️</span>
       </button>
-      <button class="simulation-btn" @click="openSimulation" title="仿真查看">
-        <span>🤖</span>
-      </button>
       <div class="status">
         <span class="status-dot" :class="{ connected: wsConnected }"></span>
         <span class="status-text">{{ wsConnected ? '已连接' : '未连接' }}{{wsConnected}}</span>
@@ -48,19 +45,14 @@
       />
     </el-dialog>
   </Teleport>
-  
-  <!-- 仿真弹窗 -->
-  <SimulationViewer 
-    :visible="simulationVisible" 
-    @close="simulationVisible = false"
-  />
+
+
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import SettingsModal from '@/components/SettingsModal.vue'
-import SimulationViewer from '@/views/SimulationViewer.vue'
 import { useConfig } from '@/composables/useConfig.js'
 import { wsClient } from '@/utils/websocket.js'
 
@@ -70,16 +62,15 @@ const { config, saving, restarting, sendIntervalMs, loadConfiguration, saveConfi
 
 const isDarkMode = ref(true)
 const settingsVisible = ref(false)
-const simulationVisible = ref(false)
 
 const navItems = [
   { path: '/', icon: '🏠', label: '首页' },
   // { path: '/Hardware-info', icon: '🎯', label: '硬件信息' },
   // { path: '/calibration', icon: '🎯', label: '硬件信息' },
   { path: '/servo-manager', icon: '🔧', label: '电机管理' },
-  { path: '/simulation', icon: '🤖', label: '仿真查看' },
   { path: '/vr-entrance', icon: '🥽', label: 'VR控制' },
-  { path: '/profile', icon: '◈', label: '个人中心' }
+  { path: '/profile', icon: '◈', label: '个人中心' },
+  { path: '/terminal-video', icon: '📺', label: '终端视频' }
 ]
 
 const wsConnected = computed(() => {
@@ -107,10 +98,6 @@ function toggleTheme() {
 function openSettings() {
   settingsVisible.value = true
   loadConfiguration()
-}
-
-function openSimulation() {
-  simulationVisible.value = true
 }
 
 async function handleSave() {
@@ -239,25 +226,6 @@ onMounted(() => {
   }
 }
 
-.simulation-btn {
-  background: transparent;
-  border: 1px solid rgba(0, 255, 136, 0.4);
-  border-radius: 50%;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 18px;
-  transition: all 0.3s;
-
-  &:hover {
-    background: rgba(0, 255, 136, 0.1);
-    border-color: rgba(0, 255, 136, 0.6);
-    transform: scale(1.1);
-  }
-}
 
 .status {
   display: flex;

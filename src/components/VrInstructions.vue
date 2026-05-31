@@ -200,7 +200,7 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { controlMotor, calibrateMotor, controlChassis, controlLift } from '@/api/motorControl'
+import { controlMotor, calibrateMotor, controlChassis, controlLift } from '@/api/robot'
 
 const props = defineProps({
   status: {

@@ -19,11 +19,9 @@ const request = axios.create({
 request.interceptors.request.use(
   (config) => {
     // 可以在这里添加 token 等认证信息
-    console.log(`📤 发送请求: ${config.method?.toUpperCase()} ${config.url}`)
     return config
   },
   (error) => {
-    console.error('❌ 请求错误:', error)
     return Promise.reject(error)
   }
 )
@@ -36,12 +34,10 @@ request.interceptors.response.use(
     // 如果后端返回了 code 字段，根据 code 判断成功与否
     if (data.code !== undefined) {
       if (data.code === 200) {
-        console.log(`✅ 请求成功: ${response.config.url}`)
         return data
       } else {
         const message = data.message || '请求失败'
         ElMessage.error(message)
-        console.error(`❌ 请求失败 [${data.code}]: ${message}`)
         return Promise.reject(new Error(message))
       }
     }
@@ -80,7 +76,6 @@ request.interceptors.response.use(
     }
     
     ElMessage.error(message)
-    console.error('❌ 响应错误:', error)
     return Promise.reject(error)
   }
 )

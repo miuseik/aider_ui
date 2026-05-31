@@ -8,11 +8,10 @@
           class="robot-card"
           :class="{ selected: selectedRobotId === robot.id }"
         >
-          <VideoStream
+          <VideoStreamARTC
             :video-id="`robot-video-${robot.id.split('_')[1]}`"
             :label="robot.name"
             :is-online="robot.online"
-            :ws-url="WS_URL"
             @click="selectRobot(robot)"
             @connected="handleVideoConnected(robot.id)"
             @disconnected="handleVideoDisconnected(robot.id)"
@@ -35,7 +34,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import VideoStream from '../components/VideoStream.vue'
+import VideoStreamARTC from '../components/VideoStreamARTC.vue'
 
 const router = useRouter()
 const emit = defineEmits(['vr-entered'])
@@ -44,9 +43,6 @@ const isVRMode = ref(false)
 const isConnecting = ref(false)
 const selectedRobotId = ref(null)
 const connectedVideos = ref(new Set())
-
-// WebSocket URL
-const WS_URL = import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
 
 // 模拟多机器人列表（后期从 API 获取）
 const robotList = ref([

@@ -258,7 +258,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide,watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { wsClient } from '@/utils/websocket.js'
