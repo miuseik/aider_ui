@@ -69,8 +69,7 @@ const navItems = [
   // { path: '/calibration', icon: '🎯', label: '硬件信息' },
   { path: '/servo-manager', icon: '🔧', label: '电机管理' },
   { path: '/vr-entrance', icon: '🥽', label: 'VR控制' },
-  { path: '/profile', icon: '◈', label: '个人中心' },
-  { path: '/terminal-video', icon: '📺', label: '终端视频' }
+  { path: '/profile', icon: '◈', label: '个人中心' }
 ]
 
 const wsConnected = computed(() => {

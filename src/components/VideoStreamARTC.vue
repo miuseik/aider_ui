@@ -12,9 +12,10 @@
       <div class="robot-label">{{ label }}</div>
       <div class="status-indicator" :class="{ online: isOnline }"></div>
       
-      <!-- 播放按钮 -->
+      <!-- 播放/暂停按钮 -->
       <button 
         class="play-btn"
+        :class="{ 'playing': isConnected }"
         :disabled="!isOnline || joining"
         @click.stop="handleConnectClick"
       >
@@ -27,6 +28,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { wsClient } from '../utils/websocket.js'  // 移到顶层
 
 const props = defineProps({
   videoId: {
@@ -105,9 +107,22 @@ async function initARTC() {
   if (joining.value || isConnected.value) return
   
   joining.value = true
+  stopSent = false  // 重置停止标志
   
   try {
-    // 加载 SDK
+    // 1. 先通知后端启动视频推流（通过 WebSocket）
+    const cmd = {
+      type: 'api_command',
+      category: 'video',
+      action: 'start'
+    }
+    wsClient.send(JSON.stringify(cmd))
+    console.log(`[${props.videoId}] 📹 已发送启动视频推流请求到后端`)
+    
+    // 2. 等待一小段时间让后端启动推流
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    // 3. 加载 SDK
     if (!window.AliRtcEngine) {
       await loadSDK()
     }
@@ -193,9 +208,32 @@ function registerEvents() {
 }
 
 // 断开连接
+let stopSent = false  // 防止重复发送 stop
+let wasConnected = false  // 追踪是否真正连接过
+
 function disconnect() {
+  // 防止重复调用
+  if (stopSent) return
+  stopSent = true
+  
+  // 记录是否真的连接过
+  wasConnected = isConnected.value
   isConnected.value = false
   joining.value = false
+  
+  // 只有在真正连接成功后才发送停止命令
+  if (wasConnected) {
+    // 通知后端停止视频推流（通过 WebSocket）
+    const cmd = {
+      type: 'api_command',
+      category: 'video',
+      action: 'stop'
+    }
+    wsClient.send(JSON.stringify(cmd))
+    console.log(`[${props.videoId}] 📹 已发送停止视频推流请求到后端`)
+  } else {
+    console.log(`[${props.videoId}] 未连接，不发送停止命令`)
+  }
   
   if (aliRtcEngine) {
     try {
@@ -214,7 +252,13 @@ function disconnect() {
 // 处理按钮点击
 function handleConnectClick() {
   console.log(`[${props.videoId}] 点击连接按钮, 当前状态:`, isConnected.value)
-  if (!isConnected.value && !joining.value) {
+  
+  if (isConnected.value) {
+    // 如果已连接，则断开（暂停）
+    console.log(`[${props.videoId}] 断开连接（暂停视频）...`)
+    disconnect()
+  } else if (!joining.value) {
+    // 如果未连接且未在连接中，则开始连接
     console.log(`[${props.videoId}] 开始连接...`)
     initARTC()
   }
@@ -316,6 +360,17 @@ onUnmounted(() => {
     background: rgba(0, 255, 136, 0.8);
     border-color: #00ff88;
     transform: scale(1.1);
+  }
+  
+  // 播放状态下的样式
+  &.playing {
+    background: rgba(255, 136, 0, 0.8);
+    border-color: #ff8800;
+    
+    &:hover:not(:disabled) {
+      background: rgba(255, 68, 68, 0.9);
+      border-color: #ff4444;
+    }
   }
   
   &:disabled {

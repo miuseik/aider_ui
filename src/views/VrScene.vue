@@ -1,5 +1,15 @@
 <template>
     <div class="vr-container" ref="sceneRef">
+      <!-- 视频显示区域 - 复用 ARTC 组件（全屏） -->
+      <VideoStreamARTC
+        video-id="vr-scene-video"
+        label="VR 场景视频"
+        :is-online="true"
+        @connected="handleVideoConnected"
+        @disconnected="handleVideoDisconnected"
+        class="vr-scene-video"
+      />
+      
       <!-- A-Frame VR 场景根节点,隐藏默认VR按钮 -->
       <a-scene vr-mode-ui="enabled: true;">
         <!-- 开启透视模式(MR混合现实),能看到真实环境+虚拟内容 -->
@@ -46,9 +56,11 @@ import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'           // WebSocket 客户端
 import { getFullVRData, getButtonName } from '../utils/vrData.js'  // VR 数据工具
 import { createAxisIndicators } from '../utils/vrHelpers.js'       // 坐标轴指示器
+import VideoStreamARTC from '../components/VideoStreamARTC.vue'    // ARTC 视频组件
 
 // ========== 响应式变量 ==========
 const sceneRef = ref(null)  // A-Frame 场景引用
+const videoConnected = ref(false)
 
 // 数据中心面板相关
 let dataPanelMesh = null         // 3D 网格对象
@@ -96,6 +108,17 @@ onUnmounted(() => {
   // 清理事件监听器
   cleanupEventListeners()
 })
+
+// ========== 视频事件处理 ==========
+function handleVideoConnected() {
+  videoConnected.value = true
+  console.log('[VrScene] 视频已连接')
+}
+
+function handleVideoDisconnected() {
+  videoConnected.value = false
+  console.log('[VrScene] 视频已断开')
+}
 
 // ========== 工具函数 ==========
 // 计算相对旋转(当前旋转 - 初始旋转)
@@ -712,43 +735,18 @@ function updateVideoScreenInFrame() {
   z-index: 10;
 }
 
-.connect-video-btn {
+:deep(.vr-scene-video) {
   position: fixed;
-  bottom: 20px;
-  left: 20px;
-  padding: 12px 24px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 2px solid #00ff88;
-  color: #00ff88;
-  font-size: 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  z-index: 100;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    background: rgba(0, 255, 136, 0.2);
-    box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
-  }
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 50;
 }
 
-.debug-video-btn {
-  position: fixed;
-  bottom: 20px;
-  left: 160px;
-  padding: 12px 24px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 2px solid #ff6600;
-  color: #ff6600;
-  font-size: 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  z-index: 100;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    background: rgba(255, 102, 0, 0.2);
-    box-shadow: 0 0 20px rgba(255, 102, 0, 0.5);
-  }
+:deep(.vr-scene-video .video-container) {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: unset;
 }
 </style>

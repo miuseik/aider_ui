@@ -34,11 +34,6 @@ const routes = [
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')
-      },
-      {
-        path: '/terminal-video',
-        name: 'TerminalVideo',
-        component: () => import('../views/TerminalVideo.vue')
       }
     ]
   }
