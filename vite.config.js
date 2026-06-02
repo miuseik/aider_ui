@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import os from 'os'
 import fs from 'fs'
@@ -30,6 +30,8 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 }
 
 export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, path.resolve(__dirname, 'env'), '')
+  
   return {
     plugins: [vue()],
     envDir: path.resolve(__dirname, 'env'),
@@ -52,12 +54,12 @@ export default defineConfig(({ mode }) => {
       open: true,
       proxy: {
         '/api': {
-          target: process.env.VITE_API_URL || 'https://localhost:8442',
+          target: env.VITE_API_URL,
           changeOrigin: true,
           secure: false
         },
         '/ws': {
-          target: process.env.VITE_WS_URL || 'wss://localhost:8442',
+          target: env.VITE_WS_URL,
           ws: true,
           changeOrigin: true,
           secure: false

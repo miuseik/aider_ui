@@ -2,7 +2,7 @@
  * 系统相关 API
  */
 
-import request from '@/utils/request'
+import request from '@/api/request.js'
 
 /**
  * 获取系统状态

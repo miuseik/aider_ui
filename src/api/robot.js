@@ -2,7 +2,7 @@
  * 机器人控制 API
  */
 
-import request from '@/utils/request'
+import request from '@/api/request.js'
 
 /**
  * 控制单个电机角度

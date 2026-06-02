@@ -2,7 +2,7 @@
  * 舵机管理 API
  */
 
-import request from '@/utils/request'
+import request from '@/api/request.js'
 
 /**
  * 获取舵机 ID 配置
