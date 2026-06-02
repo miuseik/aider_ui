@@ -932,11 +932,11 @@ const fetchAvailablePorts = async () => {
 
 
     const response = await api.listPorts()
+    const ports = response.data?.ports || []
      // ✅ 添加 CAN 接口
     if (!ports.includes('can0')) {
       ports.unshift('can0')  // 放在最前面
     }
-    const ports = response.data?.ports || []
     servoStore.setAvailablePorts(ports)
     if (ports.length > 0 && port.value === '/dev/ttyACM0') {
       port.value = ports[0]

@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "视频添加了暂停功能";git push
+git add ./;git commit -m "";git push
 ``` 
 ```bash
 ssh root@121.40.151.10
