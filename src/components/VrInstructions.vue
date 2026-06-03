@@ -198,9 +198,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { controlMotor, calibrateMotor, controlChassis, controlLift } from '@/api/robot'
+import axios from 'axios'
+import { controlMotor, controlChassis, controlLift } from '@/api/robot'
 
 const props = defineProps({
   status: {
@@ -236,6 +237,29 @@ const liftSpeed = ref(0)
 
 // 校准状态
 const calibrating = ref({})
+
+// 舵机 ID 配置
+const servoIdsConfig = ref(null)
+
+onMounted(async () => {
+  try {
+    const res = await axios.post('/api/get-servo-ids', { role: 'aider' })
+    servoIdsConfig.value = res.data?.data ?? null
+  } catch { /* 非关键 */ }
+})
+
+// 从 arm+motor 解析出 servo_id + port
+function resolveServoInfo(arm, motorName) {
+  const config = servoIdsConfig.value
+  if (!config) return null
+  const armConfig = config[`${arm}_arm`] || config[arm]
+  if (!armConfig) return null
+  const motor = armConfig[motorName]
+  if (!motor) return null
+  return { servo_id: motor.id, port: motor.port || 'can0' }
+}
+
+// 控制电机角度
 
 // 控制电机角度
 async function controlMotorHandler(arm, motorName, angle) {
@@ -288,14 +312,28 @@ async function setLiftDirection(direction) {
   await controlLiftHandler(speed)
 }
 
-// 校准电机
+// 校准电机零点（统一调用 /servo/calibrate）
 async function calibrateMotorHandler(arm, motorName) {
   const key = `${arm}_${motorName}`
   calibrating.value[key] = true
   
   try {
-    await calibrateMotor(arm, motorName, 0.0)
-    ElMessage.success(`${arm === 'left' ? '左' : '右'}机械臂 ${motorName} 校准成功`)
+    const info = resolveServoInfo(arm, motorName)
+    if (!info) {
+      ElMessage.warning(`未找到 ${arm}_${motorName} 的舵机配置`)
+      return
+    }
+
+    const res = await axios.post('/api/servo/calibrate', {
+      servo_id: info.servo_id,
+      port: info.port
+    })
+
+    if (res.data?.code === 200) {
+      ElMessage.success(`${arm === 'left' ? '左' : '右'}机械臂 ${motorName} 零点已设置`)
+    } else {
+      ElMessage.error(`校准失败: ${res.data?.message || '未知错误'}`)
+    }
   } catch (error) {
     ElMessage.error(`校准失败: ${error.message}`)
   } finally {

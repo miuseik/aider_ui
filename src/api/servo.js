@@ -102,3 +102,12 @@ export function getServoInfo(servoId, port) {
 export function listPorts() {
   return request.get('/list_ports')
 }
+
+/**
+ * 设置舵机零点（将当前位置设为0，保存到Flash）
+ * @param {number} servoId - 舵机 ID
+ * @param {string} port - 串口/CAN 端口路径
+ */
+export function setServoZero(servoId, port) {
+  return request.post('/servo/calibrate', { servo_id: servoId, port })
+}

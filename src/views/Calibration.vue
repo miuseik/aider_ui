@@ -169,24 +169,51 @@ const rightMotors = [...leftMotors]
 // 校准状态
 const calibrating = ref({})
 
-// 页面加载时获取状态
-onMounted(() => {
+// 舵机 ID 配置（从 /get-servo-ids 加载）
+const servoIdsConfig = ref(null)
+
+// 页面加载时获取状态和舵机配置
+onMounted(async () => {
   updateStatus()
+  try {
+    const res = await axios.post('/api/get-servo-ids', { role: 'aider' })
+    servoIdsConfig.value = res.data?.data ?? null
+  } catch { /* 非关键，配置可选 */ }
 })
 
-// 校准电机
+// 从 arm+motor 解析出 servo_id + port
+function resolveServoInfo(arm, motorName) {
+  const config = servoIdsConfig.value
+  if (!config) return null
+  const armConfig = config[`${arm}_arm`] || config[arm]
+  if (!armConfig) return null
+  const motor = armConfig[motorName]
+  if (!motor) return null
+  return { servo_id: motor.id, port: motor.port || 'can0' }
+}
+
+// 校准电机零点（统一调用 /servo/calibrate）
 async function calibrateMotor(arm, motorName) {
   const key = `${arm}_${motorName}`
   calibrating.value[key] = true
-  
+
   try {
-    await axios.post('/api/calibrate', {
-      arm,
-      motor: motorName,
-      target_zero: 0.0
+    const info = resolveServoInfo(arm, motorName)
+    if (!info) {
+      ElMessage.warning(`未找到 ${arm}_${motorName} 的舵机配置`)
+      return
+    }
+
+    const res = await axios.post('/api/servo/calibrate', {
+      servo_id: info.servo_id,
+      port: info.port
     })
-    
-    ElMessage.success(`${arm === 'left' ? '左' : '右'}机械臂 ${motorName} 校准成功`)
+
+    if (res.data?.code === 200) {
+      ElMessage.success(`${arm === 'left' ? '左' : '右'}机械臂 ${motorName} 零点已设置`)
+    } else {
+      ElMessage.error(`校准失败: ${res.data?.message || '未知错误'}`)
+    }
   } catch (error) {
     ElMessage.error(`校准失败: ${error.message}`)
   } finally {

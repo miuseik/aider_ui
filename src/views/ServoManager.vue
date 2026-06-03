@@ -153,6 +153,9 @@
                 <button @click="changeServoId(servo)" class="btn-icon" title="修改ID">
                   🔢
                 </button>
+                <button @click="setServoZero(servo)" class="btn-icon" title="设为零点">
+                  🎯
+                </button>
               </div>
             </el-col>
           </el-row>
@@ -571,33 +574,34 @@ const pingServoByPart = async (part, index) => {
   await pingServo(servoId, port)
 }
 
-// 校准舵机零点（设置当前位置为 0 度）
-const calibrateServo = async (servoId, port) => {
+// 设置舵机零点，调用 /servo/calibrate
+const setServoZero = async (servo) => {
+  const servoId = servo.id
   if (!servoId) {
     ElMessage.warning('舵机 ID 无效')
     return
   }
-  
+
   const confirmed = await ElMessageBox.confirm(
-    `确定要将舵机 ID=${servoId} 的当前位置设置为 0 度吗？`,
-    '校准零点',
+    `确定要将舵机 ID=${servoId} 的当前位置设为 0 度零点吗？\n\n⚠️ 此操作会写入 Flash，请确认电机已停在你想要的位置。`,
+    '设置零点',
     {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
-      type: 'warning'
-    }
+      type: 'warning',
+    },
   )
-  
+
   if (!confirmed) return
-  
+
   try {
-    const response = await api.calibrateMotor('left', `servo_${servoId}`, 0.0)
-    
+    const response = await api.setServoZero(servoId, servo.port || port.value)
     if (response.code === 200) {
-      ElMessage.success(`校准成功！舵机 ${servoId} 当前位置已设为 0 度`)
+      ElMessage.success(`舵机 ${servoId} 零点已设置，已保存到 Flash`)
     }
   } catch (error) {
-    console.error('校准失败:', error)
+    console.error('设零点失败:', error)
+    ElMessage.error(`设零点失败: ${error.response?.data?.message || error.message}`)
   }
 }
 
@@ -751,7 +755,7 @@ const scanServos = async () => {
   
   scanning.value = true
   foundServos.value = []
-  
+
   try {
     // 如果选择的是 'all'，则遍历所有可用端口
     const portsToScan = port.value === 'all' ? availablePorts.value : [port.value]
