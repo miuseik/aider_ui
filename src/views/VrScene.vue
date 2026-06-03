@@ -393,7 +393,7 @@ function initVideoScreen() {
 // ========== 视频控制 ==========
 // 连接视频(初始化 WebRTC)
 function connectVideo() {
-  if (videoConnected) return  // 已连接则忽略
+  if (videoConnected.value) return  // 已连接则忽略
   
   console.log('🎬 开始连接 VR 视频...')
   
@@ -402,7 +402,7 @@ function connectVideo() {
     wsUrl: WS_URL,
     onConnected: () => {
       console.log('✅ VR 视频已连接')
-      videoConnected = true
+      videoConnected.value = true
       
       // 视频连接后,重新绑定纹理确保更新
       setTimeout(() => {
@@ -416,7 +416,7 @@ function connectVideo() {
     },
     onDisconnected: () => {
       console.log('❌ VR 视频已断开')
-      videoConnected = false
+      videoConnected.value = false
     },
     onError: (error) => {
       console.error('VR 视频错误:', error)
@@ -434,7 +434,7 @@ function toggleVideo() {
       videoManager.cleanup()
       videoManager = null
     }
-    videoConnected = false
+    videoConnected.value = false
     console.log('⏸ 视频已断开')
   } else {
     // 连接视频
