@@ -8,7 +8,7 @@ ssh root@121.40.151.10
 ssh gaoda@192.168.1.74
 ```
 ```bash
-cd /www/aider_ui; git pull;
+cd /www/aider_ui; git pull; npm i; npm run build;
 ```
 重启服务
 sudo systemctl restart aider-server.service
