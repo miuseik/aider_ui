@@ -12,6 +12,7 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning) {
     'KeyI', 'KeyK', 'KeyJ', 'KeyL', 'KeyU', 'KeyO',
     'KeyN', 'KeyM', 'KeyH', 'KeyY', 'Period',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
     'Digit7', 'Digit9', 'KeyV', 'KeyB',
     'Tab', 'Enter', 'Escape'
   ]
@@ -28,6 +29,8 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning) {
     'ArrowUp': 'arrowup', 'ArrowDown': 'arrowdown',
     'ArrowLeft': 'arrowleft', 'ArrowRight': 'arrowright',
     'Digit7': '7', 'Digit9': '9',
+    'Digit1': '1', 'Digit2': '2', 'Digit3': '3',
+    'Digit4': '4', 'Digit5': '5', 'Digit6': '6',
     'KeyV': 'v', 'KeyB': 'b',
     'Tab': 'tab', 'Enter': 'enter',
     'Escape': 'esc'
