@@ -129,12 +129,8 @@ async function initARTC() {
     
     aliRtcEngine = window.AliRtcEngine.getInstance()
     
-    // 检查环境
-    const checkResult = await window.AliRtcEngine.isSupported()
-    if (!checkResult.support) {
-      throw new Error('当前浏览器不支持 ARTC')
-    }
-    
+    // isSupported 在 VR 浏览器上可能误报，跳过检测，直接连接
+
     // 设置互动模式
     aliRtcEngine.setChannelProfile('interactive_live')
     aliRtcEngine.setClientRole('interactive')
@@ -157,6 +153,9 @@ async function initARTC() {
     }, userId)
     
     console.log(`[${props.videoId}] ✅ ARTC 加入频道成功`)
+
+    // 启动主动轮询获取远程视频
+    startTrackPolling()
     
   } catch (error) {
     console.error(`[${props.videoId}] ❌ ARTC 连接失败:`, error)
@@ -165,46 +164,176 @@ async function initARTC() {
   }
 }
 
+// 独立的核心绑定函数
+function tryBindVideo(userId, tag) {
+  try {
+    const video = document.getElementById(props.videoId)
+    if (!video) {
+      setTimeout(() => {
+        const v = document.getElementById(props.videoId)
+        if (v) doBind(v, userId, tag)
+      }, 300)
+      return
+    }
+    doBind(video, userId, tag)
+  } catch(e) {}
+}
+
+function tryPlay(video, tag) {
+  try {
+    video.muted = true
+    var p = video.play()
+    if (p && typeof p.then === 'function') {
+      var settled = false
+      p.then(function() {
+        settled = true
+        if (video.videoWidth > 0 && !isConnected.value) {
+          isConnected.value = true; joining.value = false; emit('connected')
+        }
+      }).catch(function(e) {
+        settled = true
+      })
+      // Quest 上 Promise 可能永不 settle，超时兜底
+      setTimeout(function() {
+        if (!settled && video.readyState >= 1 && !isConnected.value) {
+          isConnected.value = true; joining.value = false; emit('connected')
+        }
+      }, 2000)
+    } else {
+      if (video.readyState >= 1 && !isConnected.value) {
+        isConnected.value = true; joining.value = false; emit('connected')
+      }
+    }
+  } catch(e) {}
+}
+
+function doBind(video, userId, tag) {
+  video.muted = true
+  video.setAttribute('playsinline', '')
+  video.setAttribute('webkit-playsinline', '')
+
+  // 多种订阅
+  try { aliRtcEngine.subscribe?.(userId, 'video') } catch(e) {}
+  try { aliRtcEngine.subscribeRemoteUserVideo?.(userId) } catch(e) {}
+  try { aliRtcEngine.subscribe?.({ userId: userId, video: true }) } catch(e) {}
+
+  // setRemoteViewConfig
+  try {
+    aliRtcEngine.setRemoteViewConfig(video, userId, 1)
+  } catch(e) {}
+
+  // 延时 play + 多次重试（Quest 上需要等 SDK 内部渲染管初始化）
+  setTimeout(function() { tryPlay(video, tag) }, 500)
+  setTimeout(function() { tryPlay(video, tag) }, 3000)
+  setTimeout(function() { tryPlay(video, tag) }, 10000)
+}
+
 // 注册事件
 function registerEvents() {
   if (!aliRtcEngine) return
-  
+
   // 远端上线
   aliRtcEngine.on('remoteUserOnLineNotify', (userId) => {
-    console.log(`[${props.videoId}] 👤 远端用户上线: ${userId}`)
+    try { tryBindVideo(userId, 'v6') } catch(e) {}
   })
-  
+
   // 远端下线
   aliRtcEngine.on('remoteUserOffLineNotify', (userId) => {
-    console.log(`[${props.videoId}] 👋 远端用户下线: ${userId}`)
-    if (userId === props.terminalUserId) {
+    if (userId === props.terminalUserId || userId.includes(props.videoId)) {
       disconnect()
     }
   })
-  
+
   // 视频订阅状态
   aliRtcEngine.on('videoSubscribeStateChanged', (userId, oldState, newState) => {
-    console.log(`[${props.videoId}] 📹 视频订阅 [${userId}]: ${oldState} → ${newState}`)
-    
-    if (newState === 3) { // 已订阅
-      const video = document.getElementById(props.videoId)
-      if (video) {
-        aliRtcEngine.setRemoteViewConfig(video, userId, 1)
-        console.log(`[${props.videoId}] ✅ 远端视频已就绪: ${userId}`)
-        
-        if (userId === props.terminalUserId) {
-          isConnected.value = true
-          joining.value = false
-          emit('connected')
+    if (newState === 3) {
+      tryBindVideo(userId, 'sub')
+      if (!isConnected.value) { isConnected.value = true; joining.value = false }
+    } else if (newState === 1) {
+      try { aliRtcEngine.setRemoteViewConfig(null, userId, 1) } catch {}
+      if (userId === props.terminalUserId || userId.includes(props.videoId)) disconnect()
+    }
+    startVideoHealthCheck()
+  })
+
+  // v7 事件
+  aliRtcEngine.on('user-published', (userId) => { tryBindVideo(userId, 'v7') })
+  aliRtcEngine.on('user-unpublished', (userId) => {
+    if (userId === props.terminalUserId || userId.includes(props.videoId)) disconnect()
+  })
+
+  // track 订阅
+  aliRtcEngine.on('track-subscribed', (userId, track) => {
+    if (track?.kind === 'video' && track?.readyState === 'live') {
+      const v = document.getElementById(props.videoId)
+      if (!v) return
+      v.muted = true
+      try { aliRtcEngine.setRemoteViewConfig?.(v, userId, 1) } catch {}
+      setTimeout(() => {
+        v.muted = true
+        v.play().catch(() => {})
+        if (v.videoWidth > 0 && !isConnected.value) {
+          isConnected.value = true; joining.value = false; emit('connected')
         }
-      }
-    } else if (newState === 1) { // 未订阅
-      aliRtcEngine.setRemoteViewConfig(null, userId, 1)
-      if (userId === props.terminalUserId) {
-        disconnect()
-      }
+      }, 300)
     }
   })
+}
+
+// ---------- 主动轮询（Quest 浏览器上事件可能不触发） ----------
+let pollTimer = null
+function startTrackPolling() {
+  if (pollTimer) return
+  let tries = 0
+  pollTimer = setInterval(() => {
+    tries++
+    const video = document.getElementById(props.videoId)
+    if (!video) return
+
+    // 已连上且有画面，停
+    if (isConnected.value && video.readyState >= 2 && !video.paused) {
+      clearInterval(pollTimer); pollTimer = null
+      return
+    }
+
+    // 从 SDK 拿远程用户，订阅并设置 rvc
+    try {
+      const users = aliRtcEngine.getRemoteUsers?.() || aliRtcEngine.getUsers?.() || []
+      for (const uid of users) {
+        const userId = typeof uid === 'string' ? uid : uid.userId || uid.id
+        if (userId && userId.includes('terminal')) {
+          try { aliRtcEngine.subscribe?.(userId, 'video') } catch(e) {}
+          try { aliRtcEngine.subscribeRemoteUserVideo?.(userId) } catch(e) {}
+          try { aliRtcEngine.setRemoteViewConfig(video, userId, 1) } catch(e) {}
+        }
+      }
+    } catch(e) {}
+
+    video.play().catch(() => {})
+
+    if (tries > 30) { clearInterval(pollTimer); pollTimer = null }
+  }, 1500)
+}
+
+// ---------- 视频健康检查 ----------
+let videoCheckTimer = null
+function startVideoHealthCheck() {
+  if (videoCheckTimer) return
+  let attempts = 0
+  videoCheckTimer = setInterval(() => {
+    attempts++
+    const video = document.getElementById(props.videoId)
+    if (!video || !isConnected.value) {
+      if (attempts > 10) { clearInterval(videoCheckTimer); videoCheckTimer = null }
+      return
+    }
+    if (video.readyState >= 2 && !video.paused) {
+      clearInterval(videoCheckTimer); videoCheckTimer = null
+      return
+    }
+    video.play().catch(() => {})
+    if (attempts > 15) { clearInterval(videoCheckTimer); videoCheckTimer = null }
+  }, 1500)
 }
 
 // 断开连接
@@ -215,6 +344,10 @@ function disconnect() {
   // 防止重复调用
   if (stopSent) return
   stopSent = true
+
+  // 清理定时器
+  if (videoCheckTimer) { clearInterval(videoCheckTimer); videoCheckTimer = null }
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   
   // 记录是否真的连接过
   wasConnected = isConnected.value

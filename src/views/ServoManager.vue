@@ -189,7 +189,7 @@
         <div class="robot-column left">
           <RobotPart 
             title="左胳膊"
-            :servos="getPartServos('left_arm', robotConfig.left_bus?.left_arm)"
+            :servos="getPartServos('left_arm', robotConfig.left_arm)"
             part-name="left_arm"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -210,7 +210,7 @@
           
           <RobotPart 
             title="脖子"
-            :servos="getPartServos('neck', robotConfig.left_bus?.neck)"
+            :servos="getPartServos('neck', robotConfig.neck)"
             part-name="neck"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -221,7 +221,7 @@
           
           <RobotPart 
             title="身体"
-            :servos="getPartServos('lift_axis', robotConfig.base_lift_bus?.lift_axis)"
+            :servos="getPartServos('lift_axis', robotConfig.lift_axis)"
             part-name="lift_axis"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -232,7 +232,7 @@
           
           <RobotPart 
             title="底盘"
-            :servos="getPartServos('base', robotConfig.base_lift_bus?.base)"
+            :servos="getPartServos('base', robotConfig.base)"
             part-name="base"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -246,7 +246,7 @@
         <div class="robot-column right">
           <RobotPart 
             title="右胳膊"
-            :servos="getPartServos('right_arm', robotConfig.right_bus?.right_arm)"
+            :servos="getPartServos('right_arm', robotConfig.right_arm)"
             part-name="right_arm"
             :scanning="scanning"
             @claim="claimSingleServo"
@@ -335,9 +335,9 @@ const getServoByPart = (part, index) => {
   if (!robotConfig.value) return { id: 0, online: false, display: '-' }
   
   const partMap = {
-    'left_arm': Object.values(robotConfig.value.left_bus?.left_arm || {}),
-    'right_arm': Object.values(robotConfig.value.right_bus?.right_arm || {}),
-    'base': Object.values(robotConfig.value.left_bus?.base || {})
+    'left_arm': Object.values(robotConfig.value.left_arm || {}),
+    'right_arm': Object.values(robotConfig.value.right_arm || {}),
+    'base': Object.values(robotConfig.value.base || {})
   }
   
   const ids = partMap[part]
@@ -488,11 +488,11 @@ const claimSingleServo = async (part, index) => {
   }
   
   const partMap = {
-    'left_arm': robotConfig.value.left_bus?.left_arm,
-    'right_arm': robotConfig.value.right_bus?.right_arm,
-    'base': robotConfig.value.left_bus?.base,
-    'neck': robotConfig.value.left_bus?.neck,
-    'lift_axis': robotConfig.value.left_bus?.lift_axis
+    'left_arm': robotConfig.value.left_arm,
+    'right_arm': robotConfig.value.right_arm,
+    'base': robotConfig.value.base,
+    'neck': robotConfig.value.neck,
+    'lift_axis': robotConfig.value.lift_axis
   }
   
   const partConfig = partMap[part]
@@ -551,11 +551,11 @@ const pingServoByPart = async (part, index) => {
   }
   
   const partMap = {
-    'left_arm': robotConfig.value.left_bus?.left_arm,
-    'right_arm': robotConfig.value.right_bus?.right_arm,
-    'base': robotConfig.value.left_bus?.base,
-    'neck': robotConfig.value.left_bus?.neck,
-    'lift_axis': robotConfig.value.left_bus?.lift_axis
+    'left_arm': robotConfig.value.left_arm,
+    'right_arm': robotConfig.value.right_arm,
+    'base': robotConfig.value.base,
+    'neck': robotConfig.value.neck,
+    'lift_axis': robotConfig.value.lift_axis
   }
   
   const partConfig = partMap[part]
@@ -613,11 +613,11 @@ const calibrateServoByPart = async (part, index) => {
   }
   
   const partMap = {
-    'left_arm': robotConfig.value.left_bus?.left_arm,
-    'right_arm': robotConfig.value.right_bus?.right_arm,
-    'base': robotConfig.value.left_bus?.base,
-    'neck': robotConfig.value.left_bus?.neck,
-    'lift_axis': robotConfig.value.left_bus?.lift_axis
+    'left_arm': robotConfig.value.left_arm,
+    'right_arm': robotConfig.value.right_arm,
+    'base': robotConfig.value.base,
+    'neck': robotConfig.value.neck,
+    'lift_axis': robotConfig.value.lift_axis
   }
   
   const partConfig = partMap[part]

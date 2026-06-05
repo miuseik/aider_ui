@@ -45,6 +45,9 @@
         
         <!-- 数据中心面板容器(显示VR数据的3D屏幕,在面前1.5米处,向下倾斜15度) -->
         <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
+
+        <!-- 视频屏幕容器(VR 沉浸模式里显示 ARTC 视频画面) -->
+        <a-entity id="videoScreen" position="0 1.2 -2" rotation="0 0 0"></a-entity>
       </a-scene>
     </div>
 </template>
@@ -67,6 +70,7 @@ let dataPanelMesh = null         // 3D 网格对象
 let dataPanelContext = null      // Canvas 2D 上下文
 let dataPanelTexture = null      // Canvas 纹理
 let animationId = null           // 动画帧 ID
+let videoScreenMesh = null       // VR 视频屏幕 3D 网格
 
 // ========== 手柄状态 ==========
 let leftGripDown = false       // 左手握把按下
@@ -113,11 +117,38 @@ onUnmounted(() => {
 function handleVideoConnected() {
   videoConnected.value = true
   console.log('[VrScene] 视频已连接')
+  // 把 ARTC video 元素转为 3D VideoTexture，VR 沉浸模式才能看到
+  setTimeout(() => initARTCVideoScreen(), 300)
 }
 
 function handleVideoDisconnected() {
   videoConnected.value = false
   console.log('[VrScene] 视频已断开')
+  if (videoScreenMesh) {
+    videoScreenMesh.parent?.remove(videoScreenMesh)
+    videoScreenMesh = null
+  }
+}
+
+// 从 VideoStreamARTC 组件拿 video 元素，贴到 3D 平面上
+function initARTCVideoScreen() {
+  if (videoScreenMesh) return // 已创建
+  const screenEntity = document.querySelector('#videoScreen')
+  const videoEl = document.getElementById('vr-scene-video')
+  if (!screenEntity || !videoEl) {
+    console.warn('[VrScene] videoScreen entity 或 vr-scene-video 未找到')
+    return
+  }
+  const texture = new THREE.VideoTexture(videoEl)
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.6, 0.9),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+  )
+  videoScreenMesh = mesh
+  screenEntity.object3D.add(mesh)
+  console.log('[VrScene] ✅ ARTC 视频已映射到 3D 屏幕（VR 沉浸可用）')
 }
 
 // ========== 工具函数 ==========
@@ -478,7 +509,9 @@ function setupRendererAnimationLoop() {
               
               // 计算相对旋转
               updateRelativeRotation()
-              
+              // 更新视频纹理（VR 里每帧刷新 ARTC 画面）
+              updateVideoScreenInFrame()
+
               updateDataPanelInFrame(0, frame, referenceSpace, session)
             }
           }

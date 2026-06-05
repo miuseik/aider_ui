@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "新增1-6按键";git push
+git add ./;git commit -m "vr显示视频了";git push
 ``` 
 ```bash
 ssh root@121.40.151.10
