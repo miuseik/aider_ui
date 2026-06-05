@@ -92,13 +92,21 @@ let rightZAxisRotation = 0              // 右手 Z 轴旋转角度
 
 // ========== 生命周期钩子 ==========
 onMounted(() => {
-  console.log('进入了沉浸模式')
-
-  // 等待 A-Frame 场景初始化
+  // 自动启动视频连接
   setTimeout(() => {
-    initControllerUpdater()      // 初始化手柄控制器(监听按键、创建坐标轴指示器)
-    initDataPanel()              // 初始化数据中心面板(CanvasTexture显示VR数据)
-    setupRendererAnimationLoop() // 设置渲染循环(每帧更新数据面板和视频纹理)
+    const videoComponent = document.querySelector('video-stream-artc')
+    if (videoComponent) {
+      const artcComp = videoComponent.__vueParentComponent?.ctx
+      if (artcComp && !artcComp.isConnected.value) {
+        artcComp.connect()
+      }
+    }
+  }, 100)
+
+  setTimeout(() => {
+    initControllerUpdater()
+    initDataPanel()
+    setupRendererAnimationLoop()
   }, 500)
 })
 
@@ -113,42 +121,70 @@ onUnmounted(() => {
   cleanupEventListeners()
 })
 
-// ========== 视频事件处理 ==========
+// 视频事件处理
 function handleVideoConnected() {
   videoConnected.value = true
-  console.log('[VrScene] 视频已连接')
-  // 把 ARTC video 元素转为 3D VideoTexture，VR 沉浸模式才能看到
   setTimeout(() => initARTCVideoScreen(), 300)
 }
 
 function handleVideoDisconnected() {
   videoConnected.value = false
-  console.log('[VrScene] 视频已断开')
   if (videoScreenMesh) {
     videoScreenMesh.parent?.remove(videoScreenMesh)
     videoScreenMesh = null
   }
 }
 
-// 从 VideoStreamARTC 组件拿 video 元素，贴到 3D 平面上
+// 从 VideoStreamARTC 拿 video 元素贴到 3D 平面
 function initARTCVideoScreen() {
-  if (videoScreenMesh) return // 已创建
   const screenEntity = document.querySelector('#videoScreen')
   const videoEl = document.getElementById('vr-scene-video')
-  if (!screenEntity || !videoEl) {
-    console.warn('[VrScene] videoScreen entity 或 vr-scene-video 未找到')
+  
+  if (!screenEntity) {
+    console.error('[VrScene] #videoScreen 实体未找到')
     return
   }
+  
+  if (!videoEl) {
+    console.error('[VrScene] #vr-scene-video 元素未找到')
+    return
+  }
+  
+  console.log('[VrScene] 初始化视频屏幕, video状态:', {
+    readyState: videoEl.readyState,
+    videoWidth: videoEl.videoWidth,
+    videoHeight: videoEl.videoHeight,
+    paused: videoEl.paused,
+    currentTime: videoEl.currentTime
+  })
+  
+  // 如果已创建，只更新纹理
+  if (videoScreenMesh) {
+    const texture = new THREE.VideoTexture(videoEl)
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    videoScreenMesh.material.map = texture
+    videoScreenMesh.material.needsUpdate = true
+    console.log('[VrScene] ✅ 视频纹理已更新')
+    return
+  }
+  
+  videoEl.muted = true
+  videoEl.play().catch((e) => {
+    console.error('[VrScene] video.play() 失败:', e.message)
+  })
+  
   const texture = new THREE.VideoTexture(videoEl)
   texture.minFilter = THREE.LinearFilter
   texture.magFilter = THREE.LinearFilter
+  
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(1.6, 0.9),
     new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
   )
   videoScreenMesh = mesh
   screenEntity.object3D.add(mesh)
-  console.log('[VrScene] ✅ ARTC 视频已映射到 3D 屏幕（VR 沉浸可用）')
+  console.log('[VrScene] ✅ 3D 视频屏幕已创建')
 }
 
 // ========== 工具函数 ==========
@@ -495,6 +531,30 @@ function setupRendererAnimationLoop() {
   
   // 监听场景的 enter-vr 事件，在进入 VR 时开始更新数据面板
   sceneEl.addEventListener('enter-vr', () => {
+    console.log('[VrScene] 🥽 进入 VR 沉浸模式')
+    
+    const videoEl = document.getElementById('vr-scene-video')
+    if (videoEl) {
+      console.log('[VrScene] enter-vr video状态:', {
+        readyState: videoEl.readyState,
+        videoWidth: videoEl.videoWidth,
+        paused: videoEl.paused
+      })
+      
+      videoEl.muted = true
+      videoEl.play().catch((e) => {
+        console.error('[VrScene] enter-vr play 失败:', e.message)
+      })
+    }
+
+    // 如果视频已连接但3D屏幕未创建，立即创建
+    if (videoConnected.value && !videoScreenMesh) {
+      console.log('[VrScene] enter-vr: 创建3D视频屏幕')
+      initARTCVideoScreen()
+    } else if (videoScreenMesh) {
+      console.log('[VrScene] enter-vr: 3D视频屏幕已存在')
+    }
+
     if (!sceneEl.hasAttribute('data-panel-updater')) {
       sceneEl.setAttribute('data-panel-updater', '')
       
@@ -745,14 +805,16 @@ function createVideoScreen(videoElement, width = 1.6, height = 0.9) {
   return { mesh, texture }
 }
 
-// 在 WebXR frame 中更新视频屏幕(每帧更新纹理)
+// 在 WebXR frame 中更新视频屏幕
 function updateVideoScreenInFrame() {
-  // 更新视频纹理
-  if (videoScreenMesh && videoScreenMesh.material) {
-    const texture = videoScreenMesh.material.map
-    if (texture && texture.image) {
-      texture.needsUpdate = true
-    }
+  const videoEl = document.getElementById('vr-scene-video')
+  if (videoEl && (videoEl.paused || videoEl.readyState < 2)) {
+    videoEl.muted = true
+    videoEl.play().catch(() => {})
+  }
+  
+  if (videoScreenMesh?.material?.map) {
+    videoScreenMesh.material.map.needsUpdate = true
   }
 }
 </script>

@@ -8,18 +8,34 @@
         muted
         class="robot-video"
       />
-      <div class="video-status" v-if="!isConnected">等待连接...</div>
+      
+      <!-- Loading 动画 -->
+      <div v-if="joining" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">{{ loadingText }}</div>
+      </div>
+      
+      <div class="video-status" v-if="!isConnected && !joining && !isOnline">等待连接...</div>
       <div class="robot-label">{{ label }}</div>
       <div class="status-indicator" :class="{ online: isOnline }"></div>
       
-      <!-- 播放/暂停按钮 -->
+      <!-- 播放按钮（居中） -->
       <button 
-        class="play-btn"
-        :class="{ 'playing': isConnected }"
-        :disabled="!isOnline || joining"
+        v-if="!joining && !isConnected"
+        class="play-btn play-btn-center"
+        :disabled="!isOnline"
         @click.stop="handleConnectClick"
       >
-        {{ isConnected ? '⏸' : (joining ? '⏳' : '▶️') }}
+        ▶️
+      </button>
+      
+      <!-- 暂停按钮（右下角） -->
+      <button 
+        v-if="isConnected"
+        class="play-btn play-btn-corner"
+        @click.stop="handleConnectClick"
+      >
+        ⏸
       </button>
     </div>
   </div>
@@ -66,7 +82,10 @@ const emit = defineEmits(['click', 'connected', 'disconnected'])
 
 const isConnected = ref(false)
 const joining = ref(false)
+const loadingText = ref('连接中...')
 let aliRtcEngine = null
+let connectStartTime = null
+let countdownTimer = null
 
 // Token 生成
 function hex(buffer) {
@@ -106,8 +125,13 @@ function loadSDK() {
 async function initARTC() {
   if (joining.value || isConnected.value) return
   
+  console.log(`[${props.videoId}] 🚀 开始连接视频...`)
   joining.value = true
-  stopSent = false  // 重置停止标志
+  stopSent = false
+  connectStartTime = Date.now()
+  
+  // 启动倒计时更新
+  updateLoadingText()
   
   try {
     // 1. 先通知后端启动视频推流（通过 WebSocket）
@@ -117,15 +141,18 @@ async function initARTC() {
       action: 'start'
     }
     wsClient.send(JSON.stringify(cmd))
-    console.log(`[${props.videoId}] 📹 已发送启动视频推流请求到后端`)
+    console.log(`[${props.videoId}] 📹 已发送启动视频推流请求`)
     
-    // 2. 等待一小段时间让后端启动推流
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 2. 等待后端启动推流
+    console.log(`[${props.videoId}] ⏳ 等待后端推流启动...`)
+    await new Promise(resolve => setTimeout(resolve, 1000))
     
     // 3. 加载 SDK
+    console.log(`[${props.videoId}] 📦 加载 ARTC SDK...`)
     if (!window.AliRtcEngine) {
       await loadSDK()
     }
+    console.log(`[${props.videoId}] ✅ SDK 加载完成`)
     
     aliRtcEngine = window.AliRtcEngine.getInstance()
     
@@ -144,6 +171,7 @@ async function initARTC() {
     const token = await generateToken(props.appId, props.appKey, props.channelId, userId, timestamp)
     
     // 加入频道
+    console.log(`[${props.videoId}] 🔗 加入频道...`)
     await aliRtcEngine.joinChannel({
       appId: props.appId,
       channelId: props.channelId,
@@ -152,10 +180,38 @@ async function initARTC() {
       timestamp,
     }, userId)
     
-    console.log(`[${props.videoId}] ✅ ARTC 加入频道成功`)
+    console.log(`[${props.videoId}] ✅ 加入频道成功`)
 
-    // 启动主动轮询获取远程视频
     startTrackPolling()
+    
+    // VR浏览器加速：高频快速检测（前10秒每200ms检查）
+    let fastCheckCount = 0
+    const fastCheckTimer = setInterval(() => {
+      fastCheckCount++
+      const video = document.getElementById(props.videoId)
+      if (!video || isConnected.value) {
+        clearInterval(fastCheckTimer)
+        return
+      }
+      
+      video.muted = true
+      video.play().catch(() => {})
+      
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        const elapsed = ((Date.now() - connectStartTime) / 1000).toFixed(1)
+        isConnected.value = true
+        joining.value = false
+        emit('connected')
+        clearInterval(fastCheckTimer)
+        if (countdownTimer) clearInterval(countdownTimer)
+        console.log(`[${props.videoId}] 🎬 视频连接成功！耗时: ${elapsed}s`)
+      }
+      
+      if (fastCheckCount >= 50) {
+        clearInterval(fastCheckTimer)
+        console.log(`[${props.videoId}] ⚠️ 快速检测超时（10秒）`)
+      }
+    }, 200)
     
   } catch (error) {
     console.error(`[${props.videoId}] ❌ ARTC 连接失败:`, error)
@@ -222,10 +278,11 @@ function doBind(video, userId, tag) {
     aliRtcEngine.setRemoteViewConfig(video, userId, 1)
   } catch(e) {}
 
-  // 延时 play + 多次重试（Quest 上需要等 SDK 内部渲染管初始化）
-  setTimeout(function() { tryPlay(video, tag) }, 500)
-  setTimeout(function() { tryPlay(video, tag) }, 3000)
-  setTimeout(function() { tryPlay(video, tag) }, 10000)
+  // 延时 play + 多次重试
+  setTimeout(function() { tryPlay(video, tag) }, 200)
+  setTimeout(function() { tryPlay(video, tag) }, 800)
+  setTimeout(function() { tryPlay(video, tag) }, 2000)
+  setTimeout(function() { tryPlay(video, tag) }, 5000)
 }
 
 // 注册事件
@@ -280,23 +337,22 @@ function registerEvents() {
   })
 }
 
-// ---------- 主动轮询（Quest 浏览器上事件可能不触发） ----------
+// ---------- 主动轮询 ----------
 let pollTimer = null
 function startTrackPolling() {
   if (pollTimer) return
   let tries = 0
+  console.log(`[${props.videoId}] 🔁 开始轮询检测...`)
   pollTimer = setInterval(() => {
     tries++
     const video = document.getElementById(props.videoId)
     if (!video) return
 
-    // 已连上且有画面，停
     if (isConnected.value && video.readyState >= 2 && !video.paused) {
       clearInterval(pollTimer); pollTimer = null
       return
     }
 
-    // 从 SDK 拿远程用户，订阅并设置 rvc
     try {
       const users = aliRtcEngine.getRemoteUsers?.() || aliRtcEngine.getUsers?.() || []
       for (const uid of users) {
@@ -309,10 +365,22 @@ function startTrackPolling() {
       }
     } catch(e) {}
 
+    video.muted = true
     video.play().catch(() => {})
+    
+    if (video.readyState >= 2 && video.videoWidth > 0 && !isConnected.value) {
+      const elapsed = ((Date.now() - connectStartTime) / 1000).toFixed(1)
+      isConnected.value = true
+      joining.value = false
+      emit('connected')
+      console.log(`[${props.videoId}] 🎬 轮询检测到视频！耗时: ${elapsed}s (第${tries}次)`)
+    }
 
-    if (tries > 30) { clearInterval(pollTimer); pollTimer = null }
-  }, 1500)
+    if (tries > 60) { 
+      clearInterval(pollTimer); pollTimer = null
+      console.warn(`[${props.videoId}] ❌ 轮询超时（30秒，共${tries}次）`)
+    }
+  }, 500)
 }
 
 // ---------- 视频健康检查 ----------
@@ -331,9 +399,10 @@ function startVideoHealthCheck() {
       clearInterval(videoCheckTimer); videoCheckTimer = null
       return
     }
+    video.muted = true
     video.play().catch(() => {})
     if (attempts > 15) { clearInterval(videoCheckTimer); videoCheckTimer = null }
-  }, 1500)
+  }, 500)
 }
 
 // 断开连接
@@ -348,24 +417,18 @@ function disconnect() {
   // 清理定时器
   if (videoCheckTimer) { clearInterval(videoCheckTimer); videoCheckTimer = null }
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
   
-  // 记录是否真的连接过
   wasConnected = isConnected.value
   isConnected.value = false
   joining.value = false
   
-  // 只有在真正连接成功后才发送停止命令
   if (wasConnected) {
-    // 通知后端停止视频推流（通过 WebSocket）
-    const cmd = {
+    wsClient.send(JSON.stringify({
       type: 'api_command',
       category: 'video',
       action: 'stop'
-    }
-    wsClient.send(JSON.stringify(cmd))
-    console.log(`[${props.videoId}] 📹 已发送停止视频推流请求到后端`)
-  } else {
-    console.log(`[${props.videoId}] 未连接，不发送停止命令`)
+    }))
   }
   
   if (aliRtcEngine) {
@@ -395,6 +458,21 @@ function handleConnectClick() {
     console.log(`[${props.videoId}] 开始连接...`)
     initARTC()
   }
+}
+
+// 更新 loading 文本（显示已等待时间）
+function updateLoadingText() {
+  if (countdownTimer) clearInterval(countdownTimer)
+  
+  countdownTimer = setInterval(() => {
+    if (!joining.value || isConnected.value) {
+      clearInterval(countdownTimer)
+      return
+    }
+    
+    const elapsed = Math.floor((Date.now() - connectStartTime) / 1000)
+    loadingText.value = `连接中 ${elapsed}s`
+  }, 1000)
 }
 
 // 暴露方法给父组件
@@ -472,17 +550,12 @@ onUnmounted(() => {
   }
 }
 
+// 播放按钮基础样式
 .play-btn {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  width: 40px;
-  height: 40px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.7);
   border: 2px solid rgba(255, 255, 255, 0.3);
   color: #fff;
-  font-size: 18px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -492,23 +565,80 @@ onUnmounted(() => {
   &:hover:not(:disabled) {
     background: rgba(0, 255, 136, 0.8);
     border-color: #00ff88;
-    transform: scale(1.1);
-  }
-  
-  // 播放状态下的样式
-  &.playing {
-    background: rgba(255, 136, 0, 0.8);
-    border-color: #ff8800;
-    
-    &:hover:not(:disabled) {
-      background: rgba(255, 68, 68, 0.9);
-      border-color: #ff4444;
-    }
   }
   
   &:disabled {
     opacity: 0.3;
     cursor: not-allowed;
   }
+}
+
+// 居中的播放按钮
+.play-btn-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px;
+  height: 60px;
+  font-size: 24px;
+  z-index: 5;
+  
+  &:hover:not(:disabled) {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+// 右下角的暂停按钮
+.play-btn-corner {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  z-index: 5;
+  
+  &:hover:not(:disabled) {
+    background: rgba(255, 68, 68, 0.9);
+    border-color: #ff4444;
+    transform: scale(1.1);
+  }
+}
+
+// Loading 动画样式
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 10;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #00ff88;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 </style>
