@@ -44,7 +44,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { wsClient } from '../utils/websocket.js'  // 移到顶层
+import { wsClient } from '../utils/websocket.js'
+import AliRtcEngine from 'aliyun-rtc-sdk'  // 使用npm安装的SDK（官方包名）
 
 const props = defineProps({
   videoId: {
@@ -87,38 +88,22 @@ let aliRtcEngine = null
 let connectStartTime = null
 let countdownTimer = null
 
-// Token 生成
-function hex(buffer) {
-  const hexCodes = []
-  const view = new DataView(buffer)
-  for (let i = 0; i < view.byteLength; i += 4) {
-    const value = view.getUint32(i)
-    const stringValue = value.toString(16)
-    const padding = '00000000'
-    const paddedValue = (padding + stringValue).slice(-padding.length)
-    hexCodes.push(paddedValue)
-  }
-  return hexCodes.join('')
-}
-
+// Token 生成（完整 base64 JSON，同 AliRTCEngine.GenerateToken 格式）
 async function generateToken(appId, appKey, channelId, userId, timestamp) {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(`${appId}${appKey}${channelId}${userId}${timestamp}`)
+  const combined = `${appId}${appKey}${channelId}${userId}${timestamp}`
+  const data = new TextEncoder().encode(combined)
   const hash = await crypto.subtle.digest('SHA-256', data)
-  return hex(hash)
-}
+  const sha256Hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
 
-// 动态加载 SDK
-function loadSDK() {
-  return new Promise((resolve, reject) => {
-    if (window.AliRtcEngine) return resolve()
-    
-    const script = document.createElement('script')
-    script.src = 'https://g.alicdn.com/apsara-media-box/imp-web-rtc/7.1.9/aliyun-rtc-sdk.js'
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('SDK 加载失败'))
-    document.head.appendChild(script)
-  })
+  const payload = {
+    appid: appId,
+    channelid: channelId,
+    userid: userId,
+    nonce: '',
+    timestamp,
+    token: sha256Hex,
+  }
+  return btoa(JSON.stringify(payload))
 }
 
 // 初始化 ARTC 连接
@@ -147,16 +132,26 @@ async function initARTC() {
     console.log(`[${props.videoId}] ⏳ 等待后端推流启动...`)
     await new Promise(resolve => setTimeout(resolve, 1000))
     
-    // 3. 加载 SDK
-    console.log(`[${props.videoId}] 📦 加载 ARTC SDK...`)
-    if (!window.AliRtcEngine) {
-      await loadSDK()
-    }
-    console.log(`[${props.videoId}] ✅ SDK 加载完成`)
+    // 3. 使用npm安装的SDK
+    console.log(`[${props.videoId}] ✅ 使用 npm 安装的 ARTC SDK`)
     
-    aliRtcEngine = window.AliRtcEngine.getInstance()
+    aliRtcEngine = AliRtcEngine.getInstance()
     
     // isSupported 在 VR 浏览器上可能误报，跳过检测，直接连接
+
+    // 设置自动订阅（重要：必须用 setDefaultSubscribeAll*）
+    console.log(`[${props.videoId}] ⚡ 配置自动订阅...`)
+    try {
+      if (aliRtcEngine.setDefaultSubscribeAllRemoteVideoStreams) {
+        aliRtcEngine.setDefaultSubscribeAllRemoteVideoStreams(true)
+        console.log(`[${props.videoId}] ✅ 默认订阅远端视频已启用`)
+      }
+      if (aliRtcEngine.setDefaultSubscribeAllRemoteAudioStreams) {
+        aliRtcEngine.setDefaultSubscribeAllRemoteAudioStreams(true)
+      }
+    } catch(e) {
+      console.warn(`[${props.videoId}] ⚠️ 自动订阅配置失败:`, e.message)
+    }
 
     // 设置互动模式
     aliRtcEngine.setChannelProfile('interactive_live')
@@ -165,22 +160,29 @@ async function initARTC() {
     // 注册事件
     registerEvents()
     
-    // 生成 Token
+    // 生成完整 base64 Token（同 Python GenerateToken 格式）
     const userId = `web_viewer_${props.videoId}`
-    const timestamp = Math.floor(Date.now() / 1000) + 3600
-    const token = await generateToken(props.appId, props.appKey, props.channelId, userId, timestamp)
+    const timestamp = Math.floor(Date.now() / 1000) + 86400
+    const fullToken = await generateToken(props.appId, props.appKey, props.channelId, userId, timestamp)
+    console.log(`[${props.videoId}] 🔑 Token generated (base64 JSON)`)
     
-    // 加入频道
+    // 使用单字符串方式 joinChannel（与 demo 验证通过的方案一致）
     console.log(`[${props.videoId}] 🔗 加入频道...`)
-    await aliRtcEngine.joinChannel({
-      appId: props.appId,
-      channelId: props.channelId,
-      userId,
-      token,
-      timestamp,
-    }, userId)
+    const joinStart = Date.now()
     
-    console.log(`[${props.videoId}] ✅ 加入频道成功`)
+    try {
+      await aliRtcEngine.joinChannel(fullToken, userId)
+      const joinTime = ((Date.now() - joinStart) / 1000).toFixed(2)
+      console.log(`[${props.videoId}] ✅ 加入频道成功，耗时: ${joinTime}s`)
+    } catch (err) {
+      console.error(`[${props.videoId}] ❌ 加入频道失败:`, err)
+      joining.value = false
+      ElMessage.error(`加入频道失败: ${err.message}`)
+      return
+    }
+    
+    // 加入成功后开始检测
+    console.log(`[${props.videoId}] ⚡ 开始检测视频...`)
 
     startTrackPolling()
     
@@ -225,10 +227,14 @@ function tryBindVideo(userId, tag) {
   try {
     const video = document.getElementById(props.videoId)
     if (!video) {
-      setTimeout(() => {
+      // 元素不存在时重试（最长等 1 秒）
+      let attempts = 0
+      const retry = () => {
         const v = document.getElementById(props.videoId)
-        if (v) doBind(v, userId, tag)
-      }, 300)
+        if (v) { doBind(v, userId, tag) }
+        else if (attempts++ < 10) { setTimeout(retry, 100) }
+      }
+      setTimeout(retry, 100)
       return
     }
     doBind(video, userId, tag)
@@ -268,7 +274,8 @@ function doBind(video, userId, tag) {
   video.setAttribute('playsinline', '')
   video.setAttribute('webkit-playsinline', '')
 
-  // 多种订阅
+  // 显式订阅（同 demo 验证通过的方案）
+  try { aliRtcEngine.subscribeRemoteMediaStream?.(userId, 1, true, true) } catch(e) {}
   try { aliRtcEngine.subscribe?.(userId, 'video') } catch(e) {}
   try { aliRtcEngine.subscribeRemoteUserVideo?.(userId) } catch(e) {}
   try { aliRtcEngine.subscribe?.({ userId: userId, video: true }) } catch(e) {}
@@ -294,6 +301,13 @@ function registerEvents() {
     try { tryBindVideo(userId, 'v6') } catch(e) {}
   })
 
+  // 远端音视频轨道可用 → 显式订阅（同 demo 方案）
+  aliRtcEngine.on('remoteTrackAvailableNotify', (userId, audioTrack, videoTrack) => {
+    try {
+      aliRtcEngine.subscribeRemoteMediaStream?.(userId, 1, !!videoTrack, !!audioTrack)
+    } catch(e) {}
+  })
+
   // 远端下线
   aliRtcEngine.on('remoteUserOffLineNotify', (userId) => {
     if (userId === props.terminalUserId || userId.includes(props.videoId)) {
@@ -307,7 +321,7 @@ function registerEvents() {
       tryBindVideo(userId, 'sub')
       if (!isConnected.value) { isConnected.value = true; joining.value = false }
     } else if (newState === 1) {
-      try { aliRtcEngine.setRemoteViewConfig(null, userId, 1) } catch {}
+      try { aliRtcEngine.setRemoteViewConfig(null, userId, 1) } catch(e) {}
       if (userId === props.terminalUserId || userId.includes(props.videoId)) disconnect()
     }
     startVideoHealthCheck()
@@ -325,7 +339,7 @@ function registerEvents() {
       const v = document.getElementById(props.videoId)
       if (!v) return
       v.muted = true
-      try { aliRtcEngine.setRemoteViewConfig?.(v, userId, 1) } catch {}
+      try { aliRtcEngine.setRemoteViewConfig?.(v, userId, 1) } catch(e) {}
       setTimeout(() => {
         v.muted = true
         v.play().catch(() => {})
@@ -355,13 +369,18 @@ function startTrackPolling() {
 
     try {
       const users = aliRtcEngine.getRemoteUsers?.() || aliRtcEngine.getUsers?.() || []
+      if (tries <= 5 || tries % 10 === 0) {
+        console.log(`[${props.videoId}] 🔍 第${tries}次轮询，检测到远端用户:`, users)
+      }
       for (const uid of users) {
         const userId = typeof uid === 'string' ? uid : uid.userId || uid.id
-        if (userId && userId.includes('terminal')) {
-          try { aliRtcEngine.subscribe?.(userId, 'video') } catch(e) {}
-          try { aliRtcEngine.subscribeRemoteUserVideo?.(userId) } catch(e) {}
-          try { aliRtcEngine.setRemoteViewConfig(video, userId, 1) } catch(e) {}
+        if (tries <= 5 || tries % 10 === 0) {
+          console.log(`[${props.videoId}] 📡 尝试订阅用户:`, userId)
         }
+        // 不管是谁，全部订阅！
+        try { aliRtcEngine.subscribe?.(userId, 'video') } catch(e) {}
+        try { aliRtcEngine.subscribeRemoteUserVideo?.(userId) } catch(e) {}
+        try { aliRtcEngine.setRemoteViewConfig(video, userId, 1) } catch(e) {}
       }
     } catch(e) {}
 

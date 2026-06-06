@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "创建一个单例管理器，在应用级别维护视频连接：在 Pinia store 中集成";git push
+git add ./;git commit -m "VR能快速看到视频了";git push
 ``` 
 ```bash
 ssh root@121.40.151.10
