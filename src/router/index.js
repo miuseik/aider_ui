@@ -34,6 +34,11 @@ const routes = [
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')
+      },
+      {
+        path: '/artc-stream',
+        name: 'ArtcStream',
+        component: () => import('../views/ArtcStream.vue')
       }
     ]
   }

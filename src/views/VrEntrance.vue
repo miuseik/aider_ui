@@ -1,6 +1,5 @@
  <template>
     <div class="vr-ui-container">
-      <!-- 多机器人视频网格 -->
       <div class="robot-grid">
         <div 
           v-for="robot in robotList" 
@@ -8,16 +7,10 @@
           class="robot-card"
           :class="{ selected: selectedRobotId === robot.id }"
         >
-          <VideoStreamARTC
-            :video-id="`robot-video-${robot.id.split('_')[1]}`"
-            :label="robot.name"
-            :is-online="robot.online"
-            @click="selectRobot(robot)"
-            @connected="handleVideoConnected(robot.id)"
-            @disconnected="handleVideoDisconnected(robot.id)"
-          />
+          <div class="robot-placeholder">
+            <span>{{ robot.name }}</span>
+          </div>
           
-          <!-- 每个机器人的进入按钮 -->
           <button 
             class="enter-vr-btn"
             :disabled="isConnecting || !robot.online"
@@ -31,10 +24,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import VideoStreamARTC from '../components/VideoStreamARTC.vue'
 
 const router = useRouter()
 const emit = defineEmits(['vr-entered'])
@@ -42,9 +34,7 @@ const emit = defineEmits(['vr-entered'])
 const isVRMode = ref(false)
 const isConnecting = ref(false)
 const selectedRobotId = ref(null)
-const connectedVideos = ref(new Set())
 
-// 模拟多机器人列表（后期从 API 获取）
 const robotList = ref([
   { id: 'robot_01', name: 'Aloha Mini #1', online: true },
   { id: 'robot_02', name: 'Aloha Mini #2', online: false },
@@ -71,18 +61,6 @@ const robotList = ref([
 // 选择机器人
 function selectRobot(robot) {
   selectedRobotId.value = robot.id
-}
-
-// 视频连接成功
-function handleVideoConnected(robotId) {
-  connectedVideos.value.add(robotId)
-  console.log(`✅ ${robotId} 视频已连接`)
-}
-
-// 视频断开连接
-function handleVideoDisconnected(robotId) {
-  connectedVideos.value.delete(robotId)
-  console.log(`❌ ${robotId} 视频已断开`)
 }
 
 // 处理开始跟踪
@@ -125,7 +103,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // 组件卸载时不需要清理,VideoStream 组件会自己清理
 })
 </script>
 
@@ -205,99 +182,6 @@ onUnmounted(() => {
   }
 }
 
-.video-container {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4/3;
-  background: #000;
-}
-
-.video-status {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
-  pointer-events: none;
-}
-
-.robot-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.video-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%);
-}
-
-.placeholder-text {
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 18px;
-  font-weight: bold;
-}
-
-.robot-label {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-.status-indicator {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #ff4444;
-  box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
-
-  &.online {
-    background: #00ff88;
-    box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-  }
-}
-
-/* 连接视频按钮 */
-.connect-video-btn {
-  width: 100%;
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: bold;
-  color: white;
-  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-  border: none;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  pointer-events: auto;
-  margin-top: 8px;
-
-  &:hover:not(:disabled) {
-    background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
-  }
-
-  &:disabled {
-    background: linear-gradient(135deg, #666 0%, #444 100%);
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-}
-
 /* 进入VR按钮 */
 .enter-vr-btn {
   width: 100%;
@@ -326,44 +210,5 @@ onUnmounted(() => {
     cursor: not-allowed;
     opacity: 0.5;
   }
-}
-
-.start-button {
-  padding: 20px 60px;
-  font-size: 20px;
-  font-weight: bold;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  pointer-events: auto;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-  transition: all 0.3s ease;
-
-  &:hover:not(:disabled) {
-    background-color: #45a049;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(0,0,0,0.4);
-  }
-
-  &:disabled {
-    background-color: #666;
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-}
-
-/* 临时测试区域 */
-.test-area {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: rgba(0, 0, 0, 0.8);
-  padding: 20px;
-  border-radius: 12px;
-  border: 2px solid #00ff88;
-  pointer-events: auto;
-  z-index: 9999;
 }
 </style>

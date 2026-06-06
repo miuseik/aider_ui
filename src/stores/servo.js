@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { videoManager } from '../utils/videoManager'
+import { ref } from 'vue'
 
 export const useServoStore = defineStore('servo', () => {
   // 状态
@@ -8,9 +7,6 @@ export const useServoStore = defineStore('servo', () => {
   const lastScanTime = ref(null)
   const availablePorts = ref([])
   
-  // 视频状态（从全局管理器同步）
-  const videoConnected = computed(() => videoManager.isConnected.value)
-  const videoConnecting = computed(() => videoManager.isConnecting.value)
 
   // 动作
   function setScannedServos(servos) {
@@ -49,34 +45,17 @@ export const useServoStore = defineStore('servo', () => {
     return scannedServos.value.filter(s => s.port === port)
   }
 
-  // 视频控制方法
-  async function connectVideo() {
-    await videoManager.connect()
-  }
-  
-  function disconnectVideo() {
-    videoManager.disconnect()
-  }
-  
-  function getVideoElement() {
-    return videoManager.getVideoElement()
-  }
 
   return {
     scannedServos,
     lastScanTime,
     availablePorts,
-    videoConnected,
-    videoConnecting,
     setScannedServos,
     addOrUpdateServo,
     removeServo,
     clearServos,
     setAvailablePorts,
     getServoById,
-    getServosByPort,
-    connectVideo,
-    disconnectVideo,
-    getVideoElement
+    getServosByPort
   }
 })
