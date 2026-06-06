@@ -98,7 +98,9 @@ export class ARTCManager {
     }
 
     try {
-      this.engine = AliRtcEngine.getInstance()
+      this.engine = AliRtcEngine.getInstance({
+        parameter: { 'RTC.Lowlatency': 1 } as any,
+      })
       this.addLog('✓ Engine instance created')
 
       this.engine.setChannelProfile('interactive_live')
@@ -110,6 +112,9 @@ export class ARTCManager {
       this.engine.setDefaultSubscribeAllRemoteVideoStreams(true)
       this.engine.setDefaultSubscribeAllRemoteAudioStreams(true)
       this.addLog('✓ Auto-subscribe enabled')
+
+      // 低延迟配置
+      try { this.engine.setParameter('{"RTC.Lowlatency":1,"subscribe":{"disableBatcher":true}}') } catch {}
 
       this.registerEvents()
       this.addLog('✓ Event listeners registered')

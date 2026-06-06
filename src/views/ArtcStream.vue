@@ -160,6 +160,7 @@ onUnmounted(() => {
                 <video
                   :ref="(el: any) => artcManager.registerVideoElement(user.uid, el as HTMLVideoElement | null)"
                   autoplay
+                  muted
                   playsinline
                   class="video-elem"
                   :class="{ 'video-hidden': user.videoSubState !== 3 }"

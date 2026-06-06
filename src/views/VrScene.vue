@@ -1,51 +1,69 @@
 <template>
-    <div class="vr-container" ref="sceneRef">
-      <a-scene vr-mode-ui="enabled: true;">
-        <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
-
-        <a-entity id="leftHand" oculus-touch-controls="hand: left">
-          <a-text 
-            id="leftHandInfo" 
-            value="Pos: ...\nRot: ..." 
-            position="0 0.04 -0.05"
-            rotation="0 0 0"
-            scale="0.05 0.05 0.05"
-            color="white"
-            align="center"
-          ></a-text>
-        </a-entity>
-        
-        <a-entity id="rightHand" oculus-touch-controls="hand: right">
-          <a-text 
-            id="rightHandInfo" 
-            value="Pos: ...\nRot: ..." 
-            position="0 0.04 -0.05"
-            rotation="0 0 0"
-            scale="0.05 0.05 0.05"
-            color="white"
-            align="center"
-          ></a-text>
-        </a-entity>
-        
-        <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
-        <a-entity id="videoScreen" position="0 1.2 -2" rotation="0 0 0"></a-entity>
-      </a-scene>
+  <div class="vr-container" ref="sceneRef">
+    <!-- ARTC 视频（隐藏，只作为视频源） -->
+    <div class="artc-source">
+      <ArtcVideo
+        ref="artcVideoRef"
+        :channel-id="channelId"
+        userId="vr_user"
+        userName="VR User"
+      />
     </div>
+
+    <a-scene vr-mode-ui="enabled: true;">
+      <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
+
+      <a-entity id="leftHand" oculus-touch-controls="hand: left">
+        <a-text 
+          id="leftHandInfo" 
+          value="Pos: ...\nRot: ..." 
+          position="0 0.04 -0.05"
+          rotation="0 0 0"
+          scale="0.05 0.05 0.05"
+          color="white"
+          align="center"
+        ></a-text>
+      </a-entity>
+      
+      <a-entity id="rightHand" oculus-touch-controls="hand: right">
+        <a-text 
+          id="rightHandInfo" 
+          value="Pos: ...\nRot: ..." 
+          position="0 0.04 -0.05"
+          rotation="0 0 0"
+          scale="0.05 0.05 0.05"
+          color="white"
+          align="center"
+        ></a-text>
+      </a-entity>
+      
+      <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
+      <a-entity id="videoScreen" position="0 1.2 -2" rotation="0 0 0"></a-entity>
+    </a-scene>
+  </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
+import ArtcVideo from '../components/ArtcVideo.vue'
 
+const route = useRoute()
 const sceneRef = ref(null)
+const artcVideoRef = ref(null)
+
+// 从路由参数获取频道信息
+const channelId = route.query.channel || 'test123'
 
 let dataPanelMesh = null
 let dataPanelContext = null
 let dataPanelTexture = null
-let animationId = null
+let videoScreenMesh = null
+let videoTexture = null
 
 let leftGripDown = false
 let rightGripDown = false
@@ -66,6 +84,7 @@ onMounted(() => {
   setTimeout(() => {
     initControllerUpdater()
     initDataPanel()
+    initVideoScreen()
     setupRendererAnimationLoop()
   }, 500)
 })
@@ -74,6 +93,18 @@ onUnmounted(() => {
   const sceneEl = document.querySelector('a-scene')
   if (sceneEl && sceneEl.renderer) {
     sceneEl.renderer.setAnimationLoop(null)
+  }
+  // 移除视频屏幕
+  const videoEntity = document.querySelector('#videoScreen')
+  if (videoEntity && videoScreenMesh) {
+    videoEntity.object3D.remove(videoScreenMesh)
+    videoScreenMesh.geometry?.dispose()
+    videoScreenMesh.material?.dispose()
+    videoScreenMesh = null
+  }
+  if (videoTexture) {
+    videoTexture.dispose()
+    videoTexture = null
   }
   cleanupEventListeners()
 })
@@ -239,6 +270,34 @@ function initDataPanel() {
   dataPanelMesh = new THREE.Mesh(geometry, material)
   dataPanelMesh.renderOrder = 1000
   dataPanelEntity.object3D.add(dataPanelMesh)
+}
+
+function initVideoScreen() {
+  const videoEntity = document.querySelector('#videoScreen')
+  if (!videoEntity) return
+  const tryCreate = (attempt = 0) => {
+    const videoEl = artcVideoRef.value?.videoEl
+    if (!videoEl) {
+      if (attempt < 20) { setTimeout(() => tryCreate(attempt + 1), 500); return }
+      console.warn('[VrScene] 未获取到视频元素')
+      return
+    }
+    try {
+      videoTexture = new THREE.VideoTexture(videoEl)
+      videoTexture.minFilter = THREE.LinearFilter
+      videoTexture.magFilter = THREE.LinearFilter
+      const geometry = new THREE.PlaneGeometry(2.0, 1.125)
+      const material = new THREE.MeshBasicMaterial({
+        map: videoTexture, side: THREE.DoubleSide,
+      })
+      videoScreenMesh = new THREE.Mesh(geometry, material)
+      videoEntity.object3D.add(videoScreenMesh)
+      console.log('[VrScene] 🎬 VR 视频屏幕已创建')
+    } catch (e) {
+      console.warn('[VrScene] 视频屏幕初始化失败:', e)
+    }
+  }
+  setTimeout(() => tryCreate(), 1500)
 }
 
 function setupRendererAnimationLoop() {
@@ -410,5 +469,12 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   width: 100vw; height: 100vh;
   position: fixed; top: 0; left: 0;
   overflow: hidden; z-index: 10;
+}
+.artc-source {
+  position: fixed;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }
 </style>
