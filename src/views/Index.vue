@@ -91,22 +91,16 @@ yi<template>
           </el-button>
         </div>
       </div>
-
-
-
       <!-- Main Content - Single Screen Layout -->
-      <div v-show="!isVRMode">
-        <DesktopInterface 
-          :status="liveStatus"
-          :vr-server-url="vrServerUrl"
-          :is-keyboard-enabled="isKeyboardEnabled"
-          @toggle-keyboard="toggleKeyboardControl"
-          @switch-vr="switchToVrView"
-        />
-      </div>
+      <KeyboardHelp
+        :is-keyboard-enabled="isKeyboardEnabled"
+        @toggle="toggleKeyboardControl"
+      />
 
-      <!-- VR Scene -->
-      <VrScene v-if="isVRMode" />
+      <RobotHardwareInfo
+        :robot-config="liveRobotConfig"
+        :scanning="false"
+      />
     </div>
   </el-config-provider>
 </template>
@@ -119,12 +113,25 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
-import DesktopInterface from '../components/DesktopInterface.vue'
+import KeyboardHelp from '../components/KeyboardHelp.vue'
+import RobotHardwareInfo from '../components/RobotHardwareInfo.vue'
+import * as api from '@/api'
 
 // State
-const isVRMode = ref(false)
-const wsConnected = ref(false)
 const refreshing = ref(false)
+const liveRobotConfig = ref(null)
+
+// 获取机器人硬件配置
+const fetchRobotConfig = async () => {
+  try {
+    const response = await api.getServoIds()
+    if (response.code === 200) {
+      liveRobotConfig.value = response.data
+    }
+  } catch (error) {
+    console.error('获取配置失败:', error)
+  }
+}
 
 // Router
 const router = useRouter()
@@ -209,6 +216,7 @@ const checkWsConnection = async () => {
 onMounted(() => {
   // 初始同步一次全量状态
   syncLiveStatus()
+  fetchRobotConfig()
 
   // Keyboard listeners
   document.addEventListener('keydown', handleKeyDown, { capture: true })

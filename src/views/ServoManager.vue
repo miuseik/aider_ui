@@ -179,84 +179,14 @@
       </div>
     </div>
 
-    <!-- 机器人硬件信息 -->
-    <div class="card robot-hardware-card">
-      <div class="robot-header">
-        <h3>🤖 机器人硬件信息</h3>
-      </div>
-      <div class="robot-layout" v-if="robotConfig">
-        <!-- 左侧：左胳膊 -->
-        <div class="robot-column left">
-          <RobotPart 
-            title="左胳膊"
-            :servos="getPartServos('left_arm', robotConfig.left_arm)"
-            part-name="left_arm"
-            :scanning="scanning"
-            @claim="claimSingleServo"
-            @ping="pingServoByPart"
-            @calibrate="calibrateServoByPart"
-            @update-angle="handleUpdateAngle"
-          />
-        </div>
-
-        <!-- 中间：头、脖子、身体、底盘 -->
-        <div class="robot-column center">
-          <RobotPart 
-            title="头"
-            :servos="[]"
-            part-name="head"
-            :scanning="scanning"
-          />
-          
-          <RobotPart 
-            title="脖子"
-            :servos="getPartServos('neck', robotConfig.neck)"
-            part-name="neck"
-            :scanning="scanning"
-            @claim="claimSingleServo"
-            @ping="pingServoByPart"
-            @calibrate="calibrateServoByPart"
-            @update-angle="handleUpdateAngle"
-          />
-          
-          <RobotPart 
-            title="身体"
-            :servos="getPartServos('lift_axis', robotConfig.lift_axis)"
-            part-name="lift_axis"
-            :scanning="scanning"
-            @claim="claimSingleServo"
-            @ping="pingServoByPart"
-            @calibrate="calibrateServoByPart"
-            @update-angle="handleUpdateAngle"
-          />
-          
-          <RobotPart 
-            title="底盘"
-            :servos="getPartServos('base', robotConfig.base)"
-            part-name="base"
-            :scanning="scanning"
-            @claim="claimSingleServo"
-            @ping="pingServoByPart"
-            @calibrate="calibrateServoByPart"
-            @update-angle="handleUpdateAngle"
-          />
-        </div>
-
-        <!-- 右侧：右胳膊 -->
-        <div class="robot-column right">
-          <RobotPart 
-            title="右胳膊"
-            :servos="getPartServos('right_arm', robotConfig.right_arm)"
-            part-name="right_arm"
-            :scanning="scanning"
-            @claim="claimSingleServo"
-            @ping="pingServoByPart"
-            @calibrate="calibrateServoByPart"
-            @update-angle="handleUpdateAngle"
-          />
-        </div>
-      </div>
-    </div>
+    <RobotHardwareInfo
+      :robot-config="robotConfig"
+      :scanning="scanning"
+      @claim="claimSingleServo"
+      @ping="pingServoByPart"
+      @calibrate="calibrateServoByPart"
+      @update-angle="handleUpdateAngle"
+    />
   </div>
 </template>
 
@@ -268,7 +198,7 @@ import { wsClient } from '@/utils/websocket.js'
 import { useServoStore } from '@/stores/servo'
 import { eventBus } from '@/utils/eventBus.js'
 import ServoInfoDisplay from '@/components/ServoInfoDisplay.vue'
-import RobotPart from '@/components/RobotPart.vue'
+import RobotHardwareInfo from '@/components/RobotHardwareInfo.vue'
 import * as api from '@/api'
 
 const servoStore = useServoStore()
@@ -350,18 +280,6 @@ const getServoByPart = (part, index) => {
     online: !!servo,
     display: servo ? `ID:${servoId}` : `ID:${servoId} 离线`
   }
-}
-
-// 获取部位舵机配置（用于 RobotPart 组件）
-const getPartServos = (partName, partConfig) => {
-  if (!partConfig) return []
-  
-  // 如果是对象格式（胳膊、底盘）
-  if (typeof partConfig === 'object' && !Array.isArray(partConfig)) {
-    return partConfig
-  }
-  
-  return []
 }
 
 provide('foundServos', foundServos)

@@ -1,78 +1,34 @@
  <template>
   <div class="robot-part">
     <div class="part-title">{{ title }}</div>
-    <el-row :gutter="12" class="servo-slots">
-      <el-col 
-        v-for="(servo, index) in displayServos" 
-        :key="servo.key || index"
-        :span="24"
-        class="servo-block"
-      >
-        <!-- ID 信息 -->
-        <el-row :gutter="8" align="middle">
-          <el-col :span="24">
-            <div class="servo-label" v-if="servo.key">
-              {{ getServoLabel(servo.key) }}
-            </div>
-            <div 
-              v-if="servo.servoId"
-              class="slot"
-              :class="getServoStatus(servo.servoId).online ? 'online' : 'offline'"
-            >
+    <div class="servo-list">
+      <template v-for="(servo, idx) in displayServos" :key="servo.key || idx">
+        <!-- 有舵机：三行卡片 -->
+        <div class="servo-item" v-if="servo.servoId">
+          <div class="label-row">
+            <span class="servo-label">{{ getServoLabel(servo.key) }}</span>
+            <span class="angle">{{ getAngle(servo.servoId) }}°</span>
+            <span class="slot" :class="getServoStatus(servo.servoId).online ? 'online' : 'offline'">
               {{ getServoStatus(servo.servoId).display }}
-            </div>
-            <div v-else class="slot empty">-</div>
-          </el-col>
-        </el-row>
-        
-        <!-- 按钮组 -->
-        <el-row :gutter="8" align="middle" class="btn-row">
-          <el-col :span="24" class="btn-group">
-            <button 
-              v-if="servo.servoId"
-              @click="$emit('claim', partName, index + 1)" 
-              class="btn-claim-single"
-              :disabled="scanning"
-            >
-              🔍
-            </button>
-            <button 
-              v-if="servo.servoId"
-              @click="$emit('ping', partName, index + 1)" 
-              class="btn-ping-single"
-              :disabled="scanning"
-            >
-              📡
-            </button>
-            <button 
-              v-if="servo.servoId"
-              @click="$emit('calibrate', partName, index + 1)" 
-              class="btn-calibrate-single"
-              :disabled="scanning"
-            >
-              ⚙️
-            </button>
-          </el-col>
-        </el-row>
-        
-        <!-- 滑动条 -->
-        <el-row :gutter="8" align="middle" class="slider-row" v-if="servo.servoId">
-          <el-col :span="20">
-            <input 
-              type="range" 
-              :value="getAngle(servo.servoId)"
-              @input="(e) => { setAngle(servo.servoId, parseInt(e.target.value)); updateAngle(servo.servoId) }"
-              min="-180" 
-              max="180" 
-              class="angle-slider"
-            />
-          </el-col>
-          <el-col :span="4" class="angle-value">
-            <span>{{ getAngle(servo.servoId) }}°</span>
-          </el-col>
-        </el-row>
-      </el-col>
-    </el-row>
+            </span>
+          </div>
+          <div class="slider-row">
+            <input type="range" :value="getAngle(servo.servoId)"
+              @input="e => { setAngle(servo.servoId, +e.target.value); updateAngle(servo.servoId) }"
+              min="-180" max="180" class="slider" />
+          </div>
+          <div class="btns-row">
+            <button @click="$emit('claim', partName, idx + 1)" :disabled="scanning" title="认领">🔍</button>
+            <button @click="$emit('ping', partName, idx + 1)" :disabled="scanning" title="Ping" class="amber">📡</button>
+            <button @click="$emit('calibrate', partName, idx + 1)" :disabled="scanning" title="校准" class="purple">⚙️</button>
+          </div>
+        </div>
+        <!-- 无舵机：空占位 -->
+        <div class="servo-item empty-card" v-else>
+          <div class="label-row"><span class="servo-label muted">空</span><span class="slot empty">⚪</span></div>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -184,165 +140,61 @@ const getServoLabel = (key) => {
 </script>
 
 <style scoped>
-.robot-part {
-  margin-bottom: 16px;
+.robot-part { margin-bottom: 12px; }
+.part-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+
+.servo-list { display: flex; flex-direction: column; gap: 5px; }
+
+.servo-item {
+  background: #1a1c23; border: 1px solid #2d3139;
+  border-radius: 6px; padding: 6px 8px;
 }
 
-.part-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
-  margin-bottom: 8px;
+/* 行1：标签左 + 角度中 + 状态右 */
+.label-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
 }
+.servo-label { font-size: 12px; font-weight: 600; color: #60a5fa; }
+.servo-label.muted { color: #6b7280; }
 
-.servo-slots {
-  margin-top: 8px;
-}
-
-.servo-block {
-  margin-bottom: 12px;
-  padding: 12px;
-  background: #1e2128;
-  border-radius: 8px;
-  border: 1px solid #2d3139;
-}
-
-.servo-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #60a5fa;
-  margin-bottom: 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #2d3139;
-}
-
-.btn-group {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
-
-.btn-row {
-  margin: 8px 0;
-}
-
-.slider-row {
-  margin: 8px 0;
-}
-
-.angle-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: #2d3139;
-  outline: none;
-  -webkit-appearance: none;
-}
-
-.angle-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-}
-
-.angle-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-}
-
-.angle-value {
-  text-align: center;
-  font-size: 13px;
+.angle {
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
   color: #9ca3af;
-  font-family: 'JetBrains Mono', monospace;
 }
 
+/* 行2：滑条通栏 */
+.slider-row { margin-bottom: 4px; }
+.slider {
+  width: 100%; height: 4px; border-radius: 2px; background: #2d3139;
+  outline: none; -webkit-appearance: none; cursor: pointer;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 11px; height: 11px;
+  border-radius: 50%; background: #3b82f6; cursor: pointer;
+}
+
+/* 行3：按钮 */
+.btns-row { display: flex; gap: 4px; }
+.btns-row button {
+  width: 22px; height: 22px; padding: 0; border: none; border-radius: 3px;
+  font-size: 11px; cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center;
+  background: #3b82f6; color: #fff;
+}
+.btns-row button.amber { background: #f59e0b; }
+.btns-row button.purple { background: #8b5cf6; }
+.btns-row button:disabled { opacity: .35; cursor: not-allowed; }
+.btns-row button:not(:disabled):hover { transform: scale(1.15); }
+
+/* 状态标签 */
 .slot {
-  flex: 1;
-  padding: 8px 12px;
-  background: #2d3139;
-  border: 1px solid #3d4149;
-  border-radius: 6px;
-  color: #9ca3af;
-  font-size: 13px;
-  font-family: 'JetBrains Mono', monospace;
-  text-align: center;
+  padding: 1px 6px; border-radius: 3px;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap; flex-shrink: 0;
+  background: #2d3139; border: 1px solid #3d4149; color: #9ca3af;
 }
-
-.slot.online {
-  background: #065f46;
-  border-color: #10b981;
-  color: #ffffff;
-}
-
-.slot.offline {
-  background: #7f1d1d;
-  border-color: #ef4444;
-  color: #fecaca;
-}
-
-.slot.empty {
-  background: #1e2128;
-  border-color: #2d3139;
-  color: #6b7280;
-}
-
-.btn-claim-single,
-.btn-ping-single,
-.btn-calibrate-single {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  color: #ffffff;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.btn-claim-single {
-  background: #3b82f6;
-}
-
-.btn-claim-single:hover:not(:disabled) {
-  background: #2563eb;
-  transform: scale(1.1);
-}
-
-.btn-ping-single {
-  background: #f59e0b;
-}
-
-.btn-ping-single:hover:not(:disabled) {
-  background: #d97706;
-  transform: scale(1.1);
-}
-
-.btn-calibrate-single {
-  background: #8b5cf6;
-}
-
-.btn-calibrate-single:hover:not(:disabled) {
-  background: #7c3aed;
-  transform: scale(1.1);
-}
-
-.btn-claim-single:disabled,
-.btn-ping-single:disabled,
-.btn-calibrate-single:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.slot.online { background: #065f46; border-color: #10b981; color: #fff; }
+.slot.offline { background: #7f1d1d; border-color: #ef4444; color: #fecaca; }
+.slot.empty { background: #1e2128; border-color: #2d3139; color: #6b7280; }
 </style>
