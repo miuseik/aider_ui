@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "视频ok";git push
+git add ./;git commit -m "头显控制";git push
 ``` 
 ```bash
 ssh root@121.40.151.10

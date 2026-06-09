@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'
@@ -58,6 +58,17 @@ const artcVideoRef = ref(null)
 
 // 从路由参数获取频道信息
 const channelId = route.query.channel || 'test123'
+
+// ========== 节流常量 (ms) ==========
+const WS_SEND_INTERVAL = 33     // WebSocket 发送 ~30fps
+const PANEL_REDRAW_INTERVAL = 100  // 数据面板重绘 ~10fps
+const TEXT_UPDATE_INTERVAL = 100   // 手柄文字更新 ~10fps
+
+// ========== 缓存 DOM 引用 ==========
+let sceneEl = null
+let leftHand = null, rightHand = null
+let leftHandInfoText = null, rightHandInfoText = null
+let videoScreenEntity = null
 
 let dataPanelMesh = null
 let dataPanelContext = null
@@ -80,8 +91,27 @@ let rightGripInitialQuaternion = null
 let leftZAxisRotation = 0
 let rightZAxisRotation = 0
 
+// ========== 节流时间戳 ==========
+let lastWsSendTime = 0
+let lastPanelRedrawTime = 0
+let lastTextUpdateTime = 0
+
+// ========== 提前创建的按钮名称缓存 ==========
+let cachedButtonNames = null // { left: [...], right: [...] }
+
+function cacheButtonNames() {
+  if (cachedButtonNames) return
+  cachedButtonNames = { left: [], right: [] }
+  for (let i = 0; i < 16; i++) {
+    cachedButtonNames.left[i] = getButtonName(i, 'left')
+    cachedButtonNames.right[i] = getButtonName(i, 'right')
+  }
+}
+
 onMounted(() => {
   setTimeout(() => {
+    cacheButtonNames()
+    cacheDomRefs()
     initControllerUpdater()
     initDataPanel()
     initVideoScreen()
@@ -90,14 +120,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  const sceneEl = document.querySelector('a-scene')
   if (sceneEl && sceneEl.renderer) {
     sceneEl.renderer.setAnimationLoop(null)
   }
-  // 移除视频屏幕
-  const videoEntity = document.querySelector('#videoScreen')
-  if (videoEntity && videoScreenMesh) {
-    videoEntity.object3D.remove(videoScreenMesh)
+  if (videoScreenEntity && videoScreenMesh) {
+    videoScreenEntity.object3D.remove(videoScreenMesh)
     videoScreenMesh.geometry?.dispose()
     videoScreenMesh.material?.dispose()
     videoScreenMesh = null
@@ -107,7 +134,21 @@ onUnmounted(() => {
     videoTexture = null
   }
   cleanupEventListeners()
+  // 清理所有缓存引用
+  sceneEl = leftHand = rightHand = null
+  leftHandInfoText = rightHandInfoText = null
+  videoScreenEntity = null
+  cachedButtonNames = null
 })
+
+function cacheDomRefs() {
+  sceneEl = document.querySelector('a-scene')
+  leftHand = document.querySelector('#leftHand')
+  rightHand = document.querySelector('#rightHand')
+  leftHandInfoText = document.querySelector('#leftHandInfo')
+  rightHandInfoText = document.querySelector('#rightHandInfo')
+  videoScreenEntity = document.querySelector('#videoScreen')
+}
 
 function calculateRelativeRotation(currentRotation, initialRotation) {
   return {
@@ -150,7 +191,7 @@ function sendTriggerRelease(hand) {
   }
 }
 
-function setupEventListeners(leftHand, rightHand) {
+function setupEventListeners() {
   leftHand.addEventListener('triggerdown', () => { leftTriggerDown = true })
   leftHand.addEventListener('triggerup', () => {
     leftTriggerDown = false
@@ -204,17 +245,11 @@ function setupEventListeners(leftHand, rightHand) {
 }
 
 function cleanupEventListeners() {
-  const leftHand = document.querySelector('#leftHand')
-  const rightHand = document.querySelector('#rightHand')
-  if (leftHand) leftHand.removeEventListener('gripdown', null)
-  if (rightHand) rightHand.removeEventListener('gripdown', null)
+  // A-Frame 事件用 addEventListener 注册的无法通过 removeEventListener 移除，
+  // 组件卸载时 A-Frame 会自动清理，此处仅清空引用
 }
 
 function initControllerUpdater() {
-  const leftHand = document.querySelector('#leftHand')
-  const rightHand = document.querySelector('#rightHand')
-  const leftHandInfoText = document.querySelector('#leftHandInfo')
-  const rightHandInfoText = document.querySelector('#rightHandInfo')
   if (!leftHand || !rightHand || !leftHandInfoText || !rightHandInfoText) {
     console.error('未找到控制器或文本实体！')
     return
@@ -223,7 +258,7 @@ function initControllerUpdater() {
   rightHandInfoText.setAttribute('rotation', '-90 0 0')
   createAxisIndicators(leftHand, '左')
   createAxisIndicators(rightHand, '右')
-  setupEventListeners(leftHand, rightHand)
+  setupEventListeners()
 }
 
 function sendVRData(vrData) {
@@ -262,6 +297,15 @@ function initDataPanel() {
   dataPanelTexture = new THREE.CanvasTexture(canvas)
   dataPanelTexture.minFilter = THREE.LinearFilter
   dataPanelTexture.magFilter = THREE.LinearFilter
+  // 预渲染背景、边框，后续只做增量更新（性能关键）
+  dataPanelContext.fillStyle = 'rgba(0, 0, 0, 0.85)'
+  dataPanelContext.fillRect(0, 0, canvas.width, canvas.height)
+  dataPanelContext.strokeStyle = '#00ffff'
+  dataPanelContext.lineWidth = 8
+  dataPanelContext.strokeRect(10, 10, canvas.width - 20, canvas.height - 20)
+  // 保存背景快照用于快速恢复
+  const bgSnapshot = dataPanelContext.getImageData(0, 0, canvas.width, canvas.height)
+  dataPanelTexture._bgSnapshot = bgSnapshot
   const geometry = new THREE.PlaneGeometry(3.0, 0.95)
   const material = new THREE.MeshBasicMaterial({
     map: dataPanelTexture, side: THREE.DoubleSide, transparent: true,
@@ -273,8 +317,7 @@ function initDataPanel() {
 }
 
 function initVideoScreen() {
-  const videoEntity = document.querySelector('#videoScreen')
-  if (!videoEntity) return
+  if (!videoScreenEntity) return
   const tryCreate = (attempt = 0) => {
     const videoEl = artcVideoRef.value?.videoEl
     if (!videoEl) {
@@ -291,8 +334,8 @@ function initVideoScreen() {
         map: videoTexture, side: THREE.DoubleSide,
       })
       videoScreenMesh = new THREE.Mesh(geometry, material)
-      videoEntity.object3D.add(videoScreenMesh)
-      console.log('[VrScene] 🎬 VR 视频屏幕已创建')
+      videoScreenEntity.object3D.add(videoScreenMesh)
+      console.log('[VrScene] VR 视频屏幕已创建')
     } catch (e) {
       console.warn('[VrScene] 视频屏幕初始化失败:', e)
     }
@@ -301,36 +344,57 @@ function initVideoScreen() {
 }
 
 function setupRendererAnimationLoop() {
-  const sceneEl = document.querySelector('a-scene')
   if (!sceneEl || !sceneEl.renderer) return
 
-  sceneEl.addEventListener('enter-vr', () => {
-    console.log('[VrScene] 🥽 进入 VR 沉浸模式')
-    if (!sceneEl.hasAttribute('data-panel-updater')) {
-      sceneEl.setAttribute('data-panel-updater', '')
-      AFRAME.registerComponent('data-panel-updater', {
-        tick: function() {
-          if (sceneEl.renderer.xr.isPresenting) {
-            const frame = sceneEl.frame
-            if (frame) {
-              const referenceSpace = sceneEl.renderer.xr.getReferenceSpace()
-              const session = sceneEl.renderer.xr.getSession()
-              updateRelativeRotation()
-              updateDataPanelInFrame(0, frame, referenceSpace, session)
-            }
-          }
-        }
-      })
-    }
-  })
+  // 注册 A-Frame 组件（只注册一次）
+  if (!sceneEl.hasAttribute('data-panel-updater')) {
+    sceneEl.setAttribute('data-panel-updater', '')
+    AFRAME.registerComponent('data-panel-updater', {
+      tick: function() {
+        onVrTick(sceneEl)
+      }
+    })
+  }
+}
+
+function onVrTick(sceneEl) {
+  if (!sceneEl.renderer?.xr?.isPresenting) return
+
+  const frame = sceneEl.frame
+  if (!frame) return
+
+  const referenceSpace = sceneEl.renderer.xr.getReferenceSpace()
+  const session = sceneEl.renderer.xr.getSession()
+  if (!referenceSpace || !session) return
+
+  const now = performance.now()
+
+  // ---- 手柄姿态计算（轻量，每帧执行）----
+  updateRelativeRotation()
+
+  // ---- VR 数据采集 + WS 发送（节流 ~30fps）----
+  let vrData = null
+  if (now - lastWsSendTime >= WS_SEND_INTERVAL) {
+    vrData = getFullVRData(sceneEl, frame)
+    sendVRData(vrData)
+    lastWsSendTime = now
+  }
+
+  // ---- 数据面板重绘（节流 ~10fps，最重的操作）----
+  if (now - lastPanelRedrawTime >= PANEL_REDRAW_INTERVAL) {
+    // 如果本轮没取过 vrData，补取一次
+    if (!vrData) vrData = getFullVRData(sceneEl, frame)
+    updateDataPanelInFrame(vrData)
+    lastPanelRedrawTime = now
+  }
 }
 
 function updateRelativeRotation() {
-  const leftHand = document.querySelector('#leftHand')
-  const rightHand = document.querySelector('#rightHand')
-  const leftHandInfoText = document.querySelector('#leftHandInfo')
-  const rightHandInfoText = document.querySelector('#rightHandInfo')
   if (!leftHand || !rightHand) return
+
+  const now = performance.now()
+  const shouldUpdateText = (now - lastTextUpdateTime >= TEXT_UPDATE_INTERVAL)
+
   if (leftGripDown && leftGripInitialRotation && leftHand.object3D.visible) {
     const rot = leftHand.object3D.rotation
     const currentRot = {
@@ -342,7 +406,8 @@ function updateRelativeRotation() {
     if (leftGripInitialQuaternion) {
       leftZAxisRotation = calculateZAxisRotation(leftHand.object3D.quaternion, leftGripInitialQuaternion)
     }
-    if (leftHandInfoText) {
+    // 文字更新节流 ~10fps
+    if (shouldUpdateText && leftHandInfoText) {
       const pos = leftHand.object3D.position
       let text = `Pos: ${pos.x.toFixed(2)} ${pos.y.toFixed(2)} ${pos.z.toFixed(2)}\n`
       text += `Rot: ${currentRot.x.toFixed(0)} ${currentRot.y.toFixed(0)} ${currentRot.z.toFixed(0)}\n`
@@ -361,7 +426,7 @@ function updateRelativeRotation() {
     if (rightGripInitialQuaternion) {
       rightZAxisRotation = calculateZAxisRotation(rightHand.object3D.quaternion, rightGripInitialQuaternion)
     }
-    if (rightHandInfoText) {
+    if (shouldUpdateText && rightHandInfoText) {
       const pos = rightHand.object3D.position
       let text = `Pos: ${pos.x.toFixed(2)} ${pos.y.toFixed(2)} ${pos.z.toFixed(2)}\n`
       text += `Rot: ${currentRot.x.toFixed(0)} ${currentRot.y.toFixed(0)} ${currentRot.z.toFixed(0)}\n`
@@ -369,26 +434,33 @@ function updateRelativeRotation() {
       rightHandInfoText.setAttribute('value', text)
     }
   }
+
+  if (shouldUpdateText) lastTextUpdateTime = now
 }
 
-function updateDataPanelInFrame(time, frame, referenceSpace, session) {
+function updateDataPanelInFrame(vrData) {
   if (!dataPanelContext || !dataPanelTexture) return
-  if (!frame || !referenceSpace || !session) return
   const ctx = dataPanelContext
   const canvas = dataPanelTexture.image
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.strokeStyle = '#00ffff'
-  ctx.lineWidth = 8
-  ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20)
+
+  // 用背景快照恢复，替代 clearRect + fillRect + strokeRect（避免重复绘制 4.6M 像素背景）
+  const bg = dataPanelTexture._bgSnapshot
+  if (bg) {
+    ctx.putImageData(bg, 0, 0)
+  } else {
+    // fallback: 首次无快照时完整绘制
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.strokeStyle = '#00ffff'
+    ctx.lineWidth = 8
+    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20)
+  }
   ctx.fillStyle = '#00ffff'
   ctx.font = 'bold 70px monospace'
   ctx.textAlign = 'center'
   ctx.fillText('◈ DATA CENTER ◈', canvas.width / 2, 90)
-  const sceneEl = document.querySelector('a-scene')
-  const vrData = getFullVRData(sceneEl, frame)
-  sendVRData(vrData)
+
   let headsetPos = 'N/A'
   let headsetRot = 'N/A'
   if (vrData && vrData.headset) {
@@ -397,7 +469,6 @@ function updateDataPanelInFrame(time, frame, referenceSpace, session) {
     headsetPos = `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`
     headsetRot = `${quat.x.toFixed(2)}, ${quat.y.toFixed(2)}, ${quat.z.toFixed(2)}`
   }
-  ctx.textAlign = 'center'
   ctx.fillStyle = '#00ff88'
   ctx.font = 'bold 55px monospace'
   ctx.fillText('HEADSET', canvas.width / 2, 170)
@@ -405,8 +476,8 @@ function updateDataPanelInFrame(time, frame, referenceSpace, session) {
   ctx.font = '45px monospace'
   ctx.fillText('POS: ' + headsetPos, canvas.width / 2, 230)
   ctx.fillText('ROT: ' + headsetRot, canvas.width / 2, 280)
-  displayControllerData(ctx, canvas, vrData?.leftController, 'left', 100)
-  displayControllerData(ctx, canvas, vrData?.rightController, 'right', canvas.width - 100)
+  displayControllerData(ctx, vrData?.leftController, 'left', 100)
+  displayControllerData(ctx, vrData?.rightController, 'right', canvas.width - 100)
   dataPanelTexture.needsUpdate = true
 }
 
