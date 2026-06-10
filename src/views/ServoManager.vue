@@ -237,8 +237,8 @@ const endId = ref(50)
 const scanning = ref(false)
 const currentScanId = ref(0)
 
-// 机器人配置
-const robotConfig = ref(null)
+// 机器人配置（从 Pinia 读取，App.vue 初始化时已加载）
+const robotConfig = computed(() => servoStore.servoIdConfig)
 
 // 是否有腿
 const hasLegs = ref(false)
@@ -287,21 +287,9 @@ provide('foundServos', foundServos)
 onMounted(async () => {
   // 获取可用串口列表并同步到 Pinia
   await fetchAvailablePorts()
-  // 获取机器人配置
-  await fetchRobotConfig()
+  // 获取机器人配置（Pinia 缓存，首次调用才请求）
+  await servoStore.fetchServoIdConfig()
 })
-
-// 获取机器人配置
-const fetchRobotConfig = async () => {
-  try {
-    const response = await api.getServoIds()
-    if (response.code === 200) {
-      robotConfig.value = response.data
-    }
-  } catch (error) {
-    console.error('获取配置失败:', error)
-  }
-}
 
 // 认领舵机 - 扫描并更新配置
 const claimServos = async () => {

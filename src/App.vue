@@ -5,6 +5,7 @@
 <script setup>
 import { onMounted, onUnmounted, reactive } from 'vue'
 import { wsClient } from './utils/websocket'
+import { useServoStore } from '@/stores/servo'
 
 // 全局 WebSocket 状态
 const globalStatus = reactive({
@@ -28,6 +29,10 @@ onMounted(() => {
   
   // 保存 interval ID 以便清理
   window.__wsCheckInterval = checkInterval
+
+  // === 应用初始化：预加载舵机 ID 配置到 Pinia ===
+  const servoStore = useServoStore()
+  servoStore.fetchServoIdConfig()
 })
 
 onUnmounted(() => {

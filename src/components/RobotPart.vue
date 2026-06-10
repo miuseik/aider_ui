@@ -133,7 +133,11 @@ const getServoLabel = (key) => {
     'right_wheel': '⚙️ 右轮',
     // 其他
     'neck': '脖子',
-    'lift_axis': '升降轴'
+    'lift_axis': '升降轴',
+    'lift_Link': '升降轴',
+    // 脖子 / 身体关节
+    'head_Link': '🔧 脖子俯仰',
+    'head_Link2': '🔧 脖子左右'
   }
   return labelMap[key] || key
 }

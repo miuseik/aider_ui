@@ -69,6 +69,34 @@ yi<template>
                 </el-tag>
               </el-col>
             </el-row>
+
+            <!-- 第四行：硬件连接状态 -->
+            <el-row :gutter="12" style="margin-top: 6px;">
+              <el-col :span="6">
+                <div class="status-item">
+                  <span class="status-dot" :class="{ connected: liveStatus.robot_connected }"></span>
+                  <el-tag size="small" :type="liveStatus.robot_connected ? 'success' : 'info'">机器人</el-tag>
+                </div>
+              </el-col>
+              <el-col :span="6">
+                <div class="status-item">
+                  <span class="status-dot" :class="{ connected: liveStatus.base_connected }"></span>
+                  <el-tag size="small" :type="liveStatus.base_connected ? 'success' : 'info'">底盘</el-tag>
+                </div>
+              </el-col>
+              <el-col :span="6">
+                <div class="status-item">
+                  <span class="status-dot" :class="{ connected: liveStatus.lift_connected }"></span>
+                  <el-tag size="small" :type="liveStatus.lift_connected ? 'success' : 'info'">升降轴</el-tag>
+                </div>
+              </el-col>
+              <el-col :span="6">
+                <div class="status-item">
+                  <span class="status-dot" :class="{ connected: liveStatus.visualizer_connected }"></span>
+                  <el-tag size="small" :type="liveStatus.visualizer_connected ? 'success' : 'info'">仿真</el-tag>
+                </div>
+              </el-col>
+            </el-row>
           </div>
         </div>
 <!--        刷新状态-->
@@ -106,7 +134,7 @@ yi<template>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElConfigProvider, ElMessageBox } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
@@ -115,23 +143,7 @@ import { useRobot } from '../composables/useRobot'
 import { useKeyboard } from '../composables/useKeyboard'
 import KeyboardHelp from '../components/KeyboardHelp.vue'
 import RobotHardwareInfo from '../components/RobotHardwareInfo.vue'
-import * as api from '@/api'
-
-// State
-const refreshing = ref(false)
-const liveRobotConfig = ref(null)
-
-// 获取机器人硬件配置
-const fetchRobotConfig = async () => {
-  try {
-    const response = await api.getServoIds()
-    if (response.code === 200) {
-      liveRobotConfig.value = response.data
-    }
-  } catch (error) {
-    console.error('获取配置失败:', error)
-  }
-}
+import { useServoStore } from '@/stores/servo'
 
 // Router
 const router = useRouter()
@@ -140,6 +152,17 @@ const router = useRouter()
 const { vrServerUrl } = useConfig()
 const { isRobotEngaged, showWarning, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
+
+// State
+const refreshing = ref(false)
+
+// === 从 Pinia 读取机器人硬件配置（App.vue 初始化时已加载） ===
+const servoStore = useServoStore()
+const liveRobotConfig = computed(() => servoStore.servoIdConfig)
+
+// === 扫描到的舵机列表（由 /api/status 返回，供 RobotPart inject 使用） ===
+const foundServos = ref([])
+provide('foundServos', foundServos)
 
 // 定义本地响应式变量来存储即时获取的全量状态
 const liveStatus = ref({
@@ -151,6 +174,16 @@ const liveStatus = ref({
   keyboardEnabled: false,
   clients_count: 0,
   robotEngaged: false,
+  // 新增硬件状态
+  base_connected: false,
+  lift_connected: false,
+  robot_connected: false,
+  visualizer_connected: false,
+  lift_height_mm: 0,
+  left_arm_angles: [],
+  right_arm_angles: [],
+  // 扫描到的在线舵机
+  servos: [],
   network: { ip: '--', ssid: '--', hostname: '--' }
 })
 
@@ -169,8 +202,20 @@ const syncLiveStatus = async () => {
         keyboardEnabled: !!data.keyboardEnabled,
         clients_count: data.clients_count || 0,
         robotEngaged: !!data.robotEngaged,
+        // 新增硬件状态
+        base_connected: !!data.base_connected,
+        lift_connected: !!data.lift_connected,
+        robot_connected: !!data.robot_connected,
+        visualizer_connected: !!data.visualizer_connected,
+        lift_height_mm: data.lift_height_mm || 0,
+        left_arm_angles: data.left_arm_angles || [],
+        right_arm_angles: data.right_arm_angles || [],
+        // 扫描到的在线舵机
+        servos: data.servos || [],
         network: data.network || { ip: '--', ssid: '--', hostname: '--' }
       }
+      // 同步 foundServos 给 RobotPart inject 使用
+      foundServos.value = data.servos || []
     }
     console.log('✅ 获取到即时状态数据:', liveStatus.value)
   } finally {
@@ -216,7 +261,15 @@ const checkWsConnection = async () => {
 onMounted(() => {
   // 初始同步一次全量状态
   syncLiveStatus()
-  fetchRobotConfig()
+
+  // 如果首次加载 servos 为空且 Terminal 在线，3 秒后重试一次
+  // （后台正在自动扫描舵机，延时后 /api/status 会有数据）
+  setTimeout(() => {
+    if (liveStatus.value.terminal_connected && liveStatus.value.servos.length === 0) {
+      console.log('🔄 后台扫描中，重新获取舵机列表...')
+      syncLiveStatus()
+    }
+  }, 3000)
 
   // Keyboard listeners
   document.addEventListener('keydown', handleKeyDown, { capture: true })
