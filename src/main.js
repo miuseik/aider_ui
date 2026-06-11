@@ -10,7 +10,7 @@ import '@/assets/styles/styles.scss'
 
 // 开发环境启用 vconsole
 // if (import.meta.env.DEV) {
-const VConsole = await import('vconsole')
+const VConsole =  import('vconsole')
 new VConsole.default()
 // }
 
