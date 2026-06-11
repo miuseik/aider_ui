@@ -1,5 +1,5 @@
 ```bash
-git add ./;git commit -m "首页显示硬件信息";git push
+git add ./;git commit -m "自建rtc";git push
 ``` 
 ```bash
 ssh root@121.40.151.10

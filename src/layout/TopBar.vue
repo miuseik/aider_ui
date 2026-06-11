@@ -68,6 +68,7 @@ const navItems = [
   // { path: '/Hardware-info', icon: '🎯', label: '硬件信息' },
   // { path: '/calibration', icon: '🎯', label: '硬件信息' },
   { path: '/servo-manager', icon: '🔧', label: '电机管理' },
+  { path: '/camera', icon: '📷', label: '摄像头' },
   { path: '/vr-entrance', icon: '🥽', label: 'VR控制' },
   { path: '/profile', icon: '◈', label: '个人中心' }
 ]

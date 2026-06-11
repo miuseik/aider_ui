@@ -14,9 +14,9 @@
       <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
 
       <a-entity id="leftHand" oculus-touch-controls="hand: left">
-        <a-text 
-          id="leftHandInfo" 
-          value="Pos: ...\nRot: ..." 
+        <a-text
+          id="leftHandInfo"
+          value="Pos: ...\nRot: ..."
           position="0 0.04 -0.05"
           rotation="0 0 0"
           scale="0.05 0.05 0.05"
@@ -24,11 +24,11 @@
           align="center"
         ></a-text>
       </a-entity>
-      
+
       <a-entity id="rightHand" oculus-touch-controls="hand: right">
-        <a-text 
-          id="rightHandInfo" 
-          value="Pos: ...\nRot: ..." 
+        <a-text
+          id="rightHandInfo"
+          value="Pos: ...\nRot: ..."
           position="0 0.04 -0.05"
           rotation="0 0 0"
           scale="0.05 0.05 0.05"
@@ -36,7 +36,7 @@
           align="center"
         ></a-text>
       </a-entity>
-      
+
       <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
       <a-entity id="videoScreen" position="0 1.2 -2" rotation="0 0 0"></a-entity>
     </a-scene>

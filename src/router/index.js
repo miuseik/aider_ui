@@ -31,6 +31,11 @@ const routes = [
         component: () => import('../views/ServoManager.vue')
       },
       {
+        path: '/camera',
+        name: 'CameraView',
+        component: () => import('../views/CameraView.vue')
+      },
+      {
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')

@@ -58,6 +58,13 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false
         },
+        // WebRTC 信令 — 独立于 UI WebSocket，直连 aider_server 根路径
+        '/ws/signaling': {
+          target: env.VITE_API_URL,   // https://localhost:8442
+          ws: true,
+          changeOrigin: true,
+          secure: false
+        },
         '/ws': {
           target: env.VITE_WS_URL,
           ws: true,
