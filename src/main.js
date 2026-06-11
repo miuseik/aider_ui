@@ -9,10 +9,10 @@ import router from './router'
 import '@/assets/styles/styles.scss'
 
 // 开发环境启用 vconsole
-if (import.meta.env.DEV) {
+// if (import.meta.env.DEV) {
   const VConsole = await import('vconsole')
   new VConsole.default()
-}
+// }
 
 const app = createApp(App)
 const pinia = createPinia()
