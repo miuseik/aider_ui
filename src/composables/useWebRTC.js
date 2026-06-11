@@ -1,27 +1,36 @@
 /**
  * WebRTC 摄像头订阅 composable
  *
- * 通过 aider_server 的 /ws/signaling 信令端点，
- * 订阅 ARM 端推送的实时摄像头视频流。
+ * 信令复用 VR client 通道（/ws/client/webrtc-camera），
+ * 不再单独连接 /ws/signaling。
+ * Terminal 的 offer/ice_candidate 经服务器转发到此客户端，
+ * 此客户端的 answer/ice_candidate 经服务器转发到 Terminal。
  */
 import { ref, onUnmounted } from 'vue'
 
 const ROOM_ID = 'robot-camera'
 
-// 开发环境：通过 Vite proxy 转发 wss://localhost:3000/ws/signaling → https://localhost:8442/ws/signaling
-// 生产环境：直连 ws.houqicg.com（Nginx 有 Upgrade/WSS 支持，www.houqicg.com 没有）
-const SIGNALING_WS_URL = import.meta.env.DEV
-  ? `wss://${location.host}/ws/signaling`
-  : 'wss://ws.houqicg.com/ws/signaling'
+// ICE 服务器（与 Terminal/服务器保持一致，后续可由 webrtc_sub_joined 响应更新）
+const HARDCODED_ICE_SERVERS = [
+  { urls: ['stun:121.40.151.10:3478'] },
+  { urls: ['turn:121.40.151.10:3478'], username: 'aider', credential: 'aider123456' },
+  { urls: ['turns:houqicg.com:5349'], username: 'aider', credential: 'aider123456' },
+]
+
+// 开发环境：通过 Vite /ws proxy 转发到 server
+// 生产环境：直连 ws.houqicg.com
+const CLIENT_WS_URL = import.meta.env.DEV
+  ? `wss://${location.host}/ws/client/webrtc-camera`
+  : 'wss://ws.houqicg.com/ws/client/webrtc-camera'
 
 export function useWebRTC(videoRef) {
-  const connectionState = ref('disconnected') // disconnected | connecting | connected | failed | closed
+  const connectionState = ref('disconnected')
   const iceConnectionState = ref('')
   const error = ref('')
 
   let ws = null
   let pc = null
-  let iceServers = []
+  let iceServers = [...HARDCODED_ICE_SERVERS]
 
   const stateLabel = () => {
     const map = {
@@ -38,11 +47,16 @@ export function useWebRTC(videoRef) {
   function connectSignaling() {
     return new Promise((resolve, reject) => {
       connectionState.value = 'connecting'
-      ws = new WebSocket(SIGNALING_WS_URL)
+      ws = new WebSocket(CLIENT_WS_URL)
 
       ws.onopen = () => {
-        console.log('[Camera] 信令 WS 已连接')
-        joinRoom()
+        console.log('[Camera] 信令 WS 已连接 (复用 /ws/client 通道)')
+        // 告知服务器我是 WebRTC 订阅者
+        ws.send(JSON.stringify({
+          type: 'webrtc_sub_join',
+          role: 'sub',
+          room_id: ROOM_ID,
+        }))
         resolve()
       }
 
@@ -60,19 +74,16 @@ export function useWebRTC(videoRef) {
     })
   }
 
-  function joinRoom() {
-    ws.send(JSON.stringify({ type: 'join', role: 'sub', room_id: ROOM_ID }))
-  }
-
   // ─── 信令消息 ───
   function handleSignalingMessage(raw) {
     try {
       const msg = JSON.parse(raw)
       switch (msg.type) {
-        case 'joined':
-          iceServers = msg.ice_servers || []
-          break
-        case 'publisher_online':
+        case 'webrtc_sub_joined':
+          if (msg.ice_servers?.length) {
+            iceServers = msg.ice_servers
+            console.log('[Camera] ICE 服务器已同步:', iceServers.length)
+          }
           break
         case 'offer':
           handleOffer(msg)
@@ -80,6 +91,7 @@ export function useWebRTC(videoRef) {
         case 'ice_candidate':
           handleIceCandidate(msg)
           break
+        // 忽略其他消息（terminal_connected、hardware_status 等）
       }
     } catch { /* ignore */ }
   }
@@ -164,8 +176,6 @@ export function useWebRTC(videoRef) {
     connectionState.value = 'connecting'
     try {
       await connectSignaling()
-      // 注意: PC 由 handleOffer() 在收到 SDP 时自动创建，
-      // 不能在这里调用 createPeerConnection()，否则会销毁已工作的 PC 导致黑屏
     } catch (e) {
       error.value = '启动失败: ' + e.message
       connectionState.value = 'failed'
