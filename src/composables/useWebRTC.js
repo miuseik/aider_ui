@@ -8,9 +8,11 @@ import { ref, onUnmounted } from 'vue'
 
 const ROOM_ID = 'robot-camera'
 
-// 通过 Vite proxy 转发：浏览器连 wss://localhost:3000/ws/signaling
-//  → Vite 代理到 wss://localhost:8442/ws/signaling (aider_server)
-const SIGNALING_WS_URL = `wss://${location.host}/ws/signaling`
+// 开发环境：通过 Vite proxy 转发 wss://localhost:3000/ws/signaling → https://localhost:8442/ws/signaling
+// 生产环境：直连 ws.houqicg.com（Nginx 有 Upgrade/WSS 支持，www.houqicg.com 没有）
+const SIGNALING_WS_URL = import.meta.env.DEV
+  ? `wss://${location.host}/ws/signaling`
+  : 'wss://ws.houqicg.com/ws/signaling'
 
 export function useWebRTC(videoRef) {
   const connectionState = ref('disconnected') // disconnected | connecting | connected | failed | closed
@@ -149,7 +151,7 @@ export function useWebRTC(videoRef) {
     const c = msg.candidate
     try {
       await pc.addIceCandidate(new RTCIceCandidate({
-        candidate: `candidate:${c.foundation} 1 ${c.protocol} ${c.priority} ${c.ip} ${c.port} typ ${c.type}`,
+        candidate: `candidate:${c.foundation} ${c.component||1} ${c.protocol} ${c.priority} ${c.ip} ${c.port} typ ${c.type}`,
         sdpMid: msg.sdpMid,
         sdpMLineIndex: msg.sdpMLineIndex,
       }))
@@ -162,7 +164,8 @@ export function useWebRTC(videoRef) {
     connectionState.value = 'connecting'
     try {
       await connectSignaling()
-      createPeerConnection()
+      // 注意: PC 由 handleOffer() 在收到 SDP 时自动创建，
+      // 不能在这里调用 createPeerConnection()，否则会销毁已工作的 PC 导致黑屏
     } catch (e) {
       error.value = '启动失败: ' + e.message
       connectionState.value = 'failed'
