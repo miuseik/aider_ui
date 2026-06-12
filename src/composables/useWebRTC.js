@@ -18,10 +18,10 @@ const HARDCODED_ICE_SERVERS = [
 ]
 
 // 开发环境：通过 Vite /ws proxy 转发到 server
-// 生产环境：直连 ws.houqicg.com
+// 生产环境：直连 www.houqicg.com（复用主域名证书，避免 ws.houqicg.com 证书不匹配）
 const CLIENT_WS_URL = import.meta.env.DEV
   ? `wss://${location.host}/ws/client/webrtc-camera`
-  : 'wss://ws.houqicg.com/ws/client/webrtc-camera'
+  : 'wss://www.houqicg.com/ws/client/webrtc-camera'
 
 export function useWebRTC(videoRef) {
   const connectionState = ref('disconnected')
