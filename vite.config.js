@@ -59,8 +59,9 @@ export default defineConfig(({ mode }) => {
           secure: false
         },
         // WebSocket 代理 — 所有 /ws/* 路径统一转发
+        // target 只取 origin，不拼路径（路径由请求自行携带）
         '/ws': {
-          target: env.VITE_WS_URL,
+          target: env.VITE_WS_URL ? new URL(env.VITE_WS_URL).origin : 'wss://localhost:8442',
           ws: true,
           changeOrigin: true,
           secure: false
