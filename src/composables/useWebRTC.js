@@ -45,10 +45,11 @@ export function useWebRTC(videoRef) {
 
   // ─── 信令 WebSocket ───
   function connectSignaling() {
+    console.log('[Camera] connectSignaling')
     return new Promise((resolve, reject) => {
       connectionState.value = 'connecting'
       ws = new WebSocket(CLIENT_WS_URL)
-
+      console.log('[Camera] 开始连接信令 WebSocket:', CLIENT_WS_URL)
       ws.onopen = () => {
         console.log('[Camera] 信令 WS 已连接 (复用 /ws/client 通道)')
         // 告知服务器我是 WebRTC 订阅者
@@ -63,12 +64,14 @@ export function useWebRTC(videoRef) {
       ws.onmessage = (event) => handleSignalingMessage(event.data)
 
       ws.onerror = () => {
+        console.log('[Camera] 信令 WS 连接错误:', ws.readyState)
         error.value = '信令服务器连接失败'
         connectionState.value = 'failed'
         reject(new Error('WebSocket error'))
       }
 
       ws.onclose = () => {
+        console.log('[Camera] 信令 WS 已关闭:', ws.readyState)
         connectionState.value = 'closed'
       }
     })
@@ -174,6 +177,7 @@ export function useWebRTC(videoRef) {
   async function start() {
     error.value = ''
     connectionState.value = 'connecting'
+    console.log('[Camera] 开始启动 WebRTC 连接')
     try {
       await connectSignaling()
     } catch (e) {
