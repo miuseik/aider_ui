@@ -3,12 +3,20 @@ import { ref, computed } from 'vue'
 import { useWebRTC } from '@/composables/useWebRTC.js'
 
 const videoRef = ref(null)
-const { connectionState, iceConnectionState, error, stateLabel, start, stop } = useWebRTC(videoRef)
+const { connectionState, iceConnectionState, error, stateLabel, micEnabled, start, stop, enableMic, disableMic } = useWebRTC(videoRef)
 
 const isConnected = computed(() => connectionState.value === 'connected')
 const isLoading = computed(() => connectionState.value === 'connecting')
 const isFailed = computed(() => connectionState.value === 'failed')
 const isIdle = computed(() => connectionState.value === 'disconnected')
+
+function toggleMic() {
+  if (micEnabled.value) {
+    disableMic()
+  } else {
+    enableMic()
+  }
+}
 </script>
 
 <template>
@@ -17,33 +25,25 @@ const isIdle = computed(() => connectionState.value === 'disconnected')
     <p class="page-desc">实时查看机器人摄像头画面（WebRTC 低延迟推流）</p>
 
     <div class="camera-card">
-      <!-- 视频 -->
       <div class="video-wrapper">
         <video ref="videoRef" autoplay playsinline muted class="video-player" />
 
         <div v-if="!isConnected" class="video-overlay">
-          <!-- 加载中 -->
           <div v-if="isLoading" class="overlay-center">
             <div class="spinner" />
             <p>正在连接...</p>
           </div>
-
-          <!-- 失败 -->
           <div v-else-if="isFailed" class="overlay-center">
             <div class="error-icon">✕</div>
             <p>连接失败</p>
             <p v-if="error" class="error-msg">{{ error }}</p>
             <button class="btn btn-primary" @click="start">重试</button>
           </div>
-
-          <!-- 待开始 -->
           <div v-else-if="isIdle" class="overlay-center">
             <div class="play-icon">▶</div>
             <p>点击播放开始观看</p>
             <button class="btn btn-primary" @click="start">开始播放</button>
           </div>
-
-          <!-- 已关闭 -->
           <div v-else class="overlay-center">
             <p>连接已断开</p>
             <button class="btn btn-primary" @click="start">重新连接</button>
@@ -51,11 +51,17 @@ const isIdle = computed(() => connectionState.value === 'disconnected')
         </div>
       </div>
 
-      <!-- 状态栏 -->
       <div class="status-bar">
         <span class="status-dot" :class="{ active: isConnected }" />
         <span>{{ stateLabel() }}</span>
         <span v-if="iceConnectionState" class="ice-state">ICE: {{ iceConnectionState }}</span>
+        <button
+          v-if="isConnected"
+          class="btn-mic"
+          :class="{ active: micEnabled }"
+          @click="toggleMic"
+          :title="micEnabled ? '关闭麦克风' : '开启麦克风'"
+        >{{ micEnabled ? '🎤' : '🔇' }}</button>
         <button v-if="isConnected" class="btn btn-stop" @click="stop">断开</button>
       </div>
     </div>
@@ -190,5 +196,22 @@ const isIdle = computed(() => connectionState.value === 'disconnected')
   color: rgba(255, 255, 255, 0.3);
   font-size: 12px;
   margin-left: auto;
+}
+.btn-mic {
+  width: 36px; height: 36px;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 36px;
+  text-align: center;
+  transition: all .2s;
+  margin-left: auto;
+  &:hover { background: rgba(255,255,255,.12); }
+  &.active {
+    background: rgba(0, 255, 136, .2);
+    border-color: rgba(0, 255, 136, .5);
+  }
 }
 </style>

@@ -10,12 +10,9 @@
         @click="selectRobot(robot)"
       >
         <div class="video-area">
-          <ArtcVideo
-            v-if="selectedRobotId === robot.id"
-            :channel-id="robot.channelId"
-            :user-id="robot.userId"
-            :user-name="robot.userName"
-            :label="robot.name"
+          <WebrtcVideo
+            v-if="selectedRobotId === robot.id && robot.online"
+            ref="webrtcRef"
           />
           <div v-else class="robot-placeholder">
             <span>{{ robot.name }}</span>
@@ -25,10 +22,10 @@
 
         <button 
           class="enter-vr-btn"
-          :disabled="isConnecting || !robot.online || selectedRobotId !== robot.id"
+          :disabled="!robot.online || selectedRobotId !== robot.id"
           @click.stop="handleEnterVR(robot)"
         >
-          {{ isConnecting && selectedRobotId === robot.id ? '连接中...' : '进入 VR' }}
+          进入 VR
         </button>
       </div>
     </div>
@@ -38,10 +35,9 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import ArtcVideo from '../components/ArtcVideo.vue'
+import WebrtcVideo from '../components/WebrtcVideo.vue'
 
 const router = useRouter()
-const isConnecting = ref(false)
 const selectedRobotId = ref(null)
 
 const robotList = ref([
@@ -57,15 +53,7 @@ function selectRobot(robot) {
 async function handleEnterVR(robot) {
   if (!robot || !robot.id) return
   selectedRobotId.value = robot.id
-  isConnecting.value = true
-  try {
-    await new Promise(resolve => setTimeout(resolve, 300))
-    router.push({ path: '/vr-scene', query: { robot: robot.id, channel: robot.channelId } })
-  } catch (err) {
-    console.error(err)
-  } finally {
-    isConnecting.value = false
-  }
+  router.push({ path: '/vr-scene', query: { robot: robot.id, channel: robot.channelId } })
 }
 </script>
 

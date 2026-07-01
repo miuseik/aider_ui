@@ -1,10 +1,9 @@
 /**
- * WebRTC 摄像头订阅 composable
+ * WebRTC 摄像头订阅 + 双向音频 composable
  *
- * 信令复用 VR client 通道（/ws/client/webrtc-camera），
- * 不再单独连接 /ws/signaling。
- * Terminal 的 offer/ice_candidate 经服务器转发到此客户端，
- * 此客户端的 answer/ice_candidate 经服务器转发到 Terminal。
+ * - 接收 terminal 推送的视频/音频 track
+ * - 支持客户端麦克风采集并发送到 terminal（双向通话）
+ * - 信令复用 VR client 通道（/ws/client/webrtc-camera）
  */
 import { ref, onUnmounted } from 'vue'
 
@@ -27,10 +26,14 @@ export function useWebRTC(videoRef) {
   const connectionState = ref('disconnected')
   const iceConnectionState = ref('')
   const error = ref('')
+  const micEnabled = ref(false)
 
   let ws = null
   let pc = null
   let iceServers = [...HARDCODED_ICE_SERVERS]
+  let remoteAudioEl = null  // 播放 terminal 传来的音频
+  let localMicStream = null  // 本地麦克风 MediaStream
+  let localAudioTrack = null
 
   const stateLabel = () => {
     const map = {
@@ -94,6 +97,9 @@ export function useWebRTC(videoRef) {
         case 'ice_candidate':
           handleIceCandidate(msg)
           break
+        case 'answer':
+          handleAnswer(msg)
+          break
         // 忽略其他消息（terminal_connected、hardware_status 等）
       }
     } catch { /* ignore */ }
@@ -136,7 +142,33 @@ export function useWebRTC(videoRef) {
       }
     }
 
+    // 当本地添加 track 时自动发起 renegotiation
+    pc.onnegotiationneeded = async () => {
+      console.log('[Camera] negotiationneeded, signalingState:', pc.signalingState)
+      try {
+        if (pc.signalingState !== 'stable') {
+          console.log('[Camera] 跳过 renegotiation: PC 非 stable 状态')
+          return
+        }
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'offer',
+            sdp: pc.localDescription.sdp,
+            room_id: ROOM_ID,
+          }))
+          console.log('[Camera] Renegotiation offer 已发送')
+        }
+      } catch (e) {
+        console.error('[Camera] renegotiation 失败:', e)
+      }
+    }
+
     pc.ontrack = (event) => {
+      console.log('[Camera] ontrack:', event.track.kind)
+
+      // ── 视频 track ──
       if (event.track.kind === 'video' && videoRef.value) {
         if (event.streams.length > 0) {
           videoRef.value.srcObject = event.streams[0]
@@ -146,11 +178,38 @@ export function useWebRTC(videoRef) {
           }
         }
       }
+
+      // ── 音频 track（terminal → UI）──
+      if (event.track.kind === 'audio') {
+        if (!remoteAudioEl) {
+          remoteAudioEl = new Audio()
+          remoteAudioEl.autoplay = true
+          remoteAudioEl.id = 'remote-audio'
+          console.log('[Camera] 创建远程音频播放器')
+        }
+        if (event.streams.length > 0) {
+          remoteAudioEl.srcObject = event.streams[0]
+          remoteAudioEl.play().catch(e => console.warn('[Camera] audio play 失败:', e))
+          console.log('[Camera] 远程音频已连接')
+        } else {
+          event.track.onunmute = () => {
+            remoteAudioEl.srcObject = new MediaStream([event.track])
+            remoteAudioEl.play().catch(() => {})
+          }
+        }
+      }
     }
   }
 
   async function handleOffer(msg) {
     if (!pc) createPeerConnection()
+    console.log('[Camera] 收到 offer, signalingState:', pc.signalingState)
+    // 如果已经在 have-local-offer 状态（客户端自己发起了 renegotiation），
+    // 忽略服务端的 offer（使用客户端的 localDescription）
+    if (pc.signalingState === 'have-local-offer') {
+      console.log('[Camera] 忽略服务端 offer: PC 已有 local offer')
+      return
+    }
     await pc.setRemoteDescription({ sdp: msg.sdp, type: 'offer' })
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
@@ -159,6 +218,19 @@ export function useWebRTC(videoRef) {
       sdp: pc.localDescription.sdp,
       room_id: ROOM_ID,
     }))
+    console.log('[Camera] Answer 已发送')
+  }
+
+  async function handleAnswer(msg) {
+    if (!pc) return
+    console.log('[Camera] 收到 answer, signalingState:', pc.signalingState)
+    // 只在自己发起了 offer 时处理 answer
+    if (pc.signalingState !== 'have-local-offer') {
+      console.log('[Camera] 忽略 answer: PC 不在 have-local-offer 状态')
+      return
+    }
+    await pc.setRemoteDescription({ sdp: msg.sdp, type: 'answer' })
+    console.log('[Camera] 远程 SDP (answer) 已设置')
   }
 
   async function handleIceCandidate(msg) {
@@ -171,6 +243,51 @@ export function useWebRTC(videoRef) {
         sdpMLineIndex: msg.sdpMLineIndex,
       }))
     } catch { /* ignore */ }
+  }
+
+  // ─── 麦克风（UI → Terminal）──
+  async function enableMic() {
+    if (localAudioTrack) {
+      console.log('[Camera] 麦克风已开启')
+      return true
+    }
+    try {
+      console.log('[Camera] 请求麦克风权限...')
+      localMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      })
+      localAudioTrack = localMicStream.getAudioTracks()[0]
+      if (!localAudioTrack) {
+        throw new Error('未获取到音频 track')
+      }
+      console.log('[Camera] 麦克风已获取:', localAudioTrack.label)
+
+      if (pc) {
+        pc.addTrack(localAudioTrack, localMicStream)
+        // onnegotiationneeded 会自动触发，无需手动 createOffer
+        console.log('[Camera] 麦克风 track 已添加到 PC')
+      }
+      micEnabled.value = true
+      return true
+    } catch (e) {
+      console.error('[Camera] 麦克风开启失败:', e)
+      error.value = '麦克风权限被拒绝或设备不可用'
+      return false
+    }
+  }
+
+  function disableMic() {
+    if (localAudioTrack) {
+      localAudioTrack.stop()
+      localAudioTrack = null
+    }
+    if (localMicStream) {
+      localMicStream.getTracks().forEach(t => t.stop())
+      localMicStream = null
+    }
+    micEnabled.value = false
+    console.log('[Camera] 麦克风已关闭')
   }
 
   // ─── 启停 ───
@@ -187,6 +304,11 @@ export function useWebRTC(videoRef) {
   }
 
   function stop() {
+    disableMic()
+    if (remoteAudioEl) {
+      remoteAudioEl.srcObject = null
+      remoteAudioEl = null
+    }
     pc?.close(); pc = null
     ws?.close(); ws = null
     connectionState.value = 'disconnected'
@@ -194,5 +316,8 @@ export function useWebRTC(videoRef) {
 
   onUnmounted(stop)
 
-  return { connectionState, iceConnectionState, error, stateLabel, start, stop }
+  return {
+    connectionState, iceConnectionState, error, stateLabel, micEnabled,
+    start, stop, enableMic, disableMic,
+  }
 }

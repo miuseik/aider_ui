@@ -1,14 +1,7 @@
 <template>
   <div class="vr-container" ref="sceneRef">
-    <!-- ARTC 视频（隐藏，只作为视频源） -->
-    <div class="artc-source">
-      <ArtcVideo
-        ref="artcVideoRef"
-        :channel-id="channelId"
-        userId="vr_user"
-        userName="VR User"
-      />
-    </div>
+    <!-- WebRTC 视频源（隐藏，供 THREE.VideoTexture 使用） -->
+    <WebrtcVideo ref="webrtcRef" class="video-source" />
 
     <a-scene vr-mode-ui="enabled: true;">
       <a-entity webxr-passthrough="referenceSpaceType: local-floor"></a-entity>
@@ -50,14 +43,11 @@ import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
-import ArtcVideo from '../components/ArtcVideo.vue'
+import WebrtcVideo from '../components/WebrtcVideo.vue'
 
 const route = useRoute()
 const sceneRef = ref(null)
-const artcVideoRef = ref(null)
-
-// 从路由参数获取频道信息
-const channelId = route.query.channel || 'test123'
+const webrtcRef = ref(null)
 
 // ========== 节流常量 (ms) ==========
 const WS_SEND_INTERVAL = 33     // WebSocket 发送 ~30fps
@@ -134,7 +124,6 @@ onUnmounted(() => {
     videoTexture = null
   }
   cleanupEventListeners()
-  // 清理所有缓存引用
   sceneEl = leftHand = rightHand = null
   leftHandInfoText = rightHandInfoText = null
   videoScreenEntity = null
@@ -318,29 +307,54 @@ function initDataPanel() {
 
 function initVideoScreen() {
   if (!videoScreenEntity) return
-  const tryCreate = (attempt = 0) => {
-    const videoEl = artcVideoRef.value?.videoEl
+  let attempts = 0
+  const maxAttempts = 60  // 最多等 30 秒
+
+  const tryCreate = () => {
+    const videoEl = webrtcRef.value?.getVideoEl?.()
     if (!videoEl) {
-      if (attempt < 20) { setTimeout(() => tryCreate(attempt + 1), 500); return }
+      if (attempts++ < 20) { setTimeout(tryCreate, 500); return }
       console.warn('[VrScene] 未获取到视频元素')
       return
+    }
+    // 直接检查 video 元素状态，不依赖 connectionState ref 的解包
+    const hasStream = videoEl.srcObject !== null
+    const hasFrames = videoEl.readyState >= 2  // HAVE_CURRENT_DATA
+    const hasSize = videoEl.videoWidth > 0 && videoEl.videoHeight > 0
+    console.log('[VrScene] 视频状态:', {
+      hasStream, hasFrames, hasSize,
+      readyState: videoEl.readyState,
+      size: `${videoEl.videoWidth}x${videoEl.videoHeight}`,
+      paused: videoEl.paused,
+    })
+    if (!hasStream || !hasFrames || !hasSize) {
+      if (attempts++ < maxAttempts) { setTimeout(tryCreate, 500); return }
+      console.warn('[VrScene] 视频流超时未就绪 (stream=', hasStream, ', frames=', hasFrames, ', size=', hasSize, ')')
+      return
+    }
+    // 确保视频在播放
+    if (videoEl.paused) {
+      videoEl.play().catch(e => console.warn('[VrScene] play 失败:', e))
     }
     try {
       videoTexture = new THREE.VideoTexture(videoEl)
       videoTexture.minFilter = THREE.LinearFilter
       videoTexture.magFilter = THREE.LinearFilter
+      videoTexture.needsUpdate = true
       const geometry = new THREE.PlaneGeometry(2.0, 1.125)
       const material = new THREE.MeshBasicMaterial({
         map: videoTexture, side: THREE.DoubleSide,
+        depthTest: false, depthWrite: false,
       })
       videoScreenMesh = new THREE.Mesh(geometry, material)
+      videoScreenMesh.renderOrder = 999
       videoScreenEntity.object3D.add(videoScreenMesh)
       console.log('[VrScene] VR 视频屏幕已创建')
     } catch (e) {
       console.warn('[VrScene] 视频屏幕初始化失败:', e)
     }
   }
-  setTimeout(() => tryCreate(), 1500)
+  setTimeout(tryCreate, 1500)
 }
 
 function setupRendererAnimationLoop() {
@@ -368,6 +382,11 @@ function onVrTick(sceneEl) {
   if (!referenceSpace || !session) return
 
   const now = performance.now()
+
+  // ---- 视频纹理强制刷新（每帧）----
+  if (videoTexture && videoScreenMesh?.material?.map) {
+    videoTexture.needsUpdate = true
+  }
 
   // ---- 手柄姿态计算（轻量，每帧执行）----
   updateRelativeRotation()
@@ -541,11 +560,14 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   position: fixed; top: 0; left: 0;
   overflow: hidden; z-index: 10;
 }
-.artc-source {
+.video-source {
   position: fixed;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
+  top: 0;
+  left: 0;
+  width: 640px;
+  height: 360px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
 }
 </style>
