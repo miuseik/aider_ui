@@ -15,6 +15,9 @@
       <button class="theme-btn" @click="toggleTheme" title="切换主题">
         <span>{{ isDarkMode ? '☀️' : '🌙' }}</span>
       </button>
+      <button class="theme-btn" @click="wsTest" title="ws连接">
+        <span>ws连接</span>
+      </button>
       <button class="settings-btn" @click="openSettings" title="系统设置">
         <span>⚙️</span>
       </button>
@@ -95,6 +98,9 @@ function toggleTheme() {
   localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
 }
 
+function wsTest() {
+window.open(`https://${window.location.hostname}:8442`, '_blank')
+}
 function openSettings() {
   settingsVisible.value = true
   loadConfiguration()
