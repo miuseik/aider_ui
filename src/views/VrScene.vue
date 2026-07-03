@@ -86,6 +86,9 @@ let lastWsSendTime = 0
 let lastPanelRedrawTime = 0
 let lastTextUpdateTime = 0
 
+// ========== 初始化去重 ==========
+let vrInitialized = false
+
 // ========== 提前创建的按钮名称缓存 ==========
 let cachedButtonNames = null // { left: [...], right: [...] }
 
@@ -99,23 +102,50 @@ function cacheButtonNames() {
 }
 
 onMounted(() => {
-  setTimeout(() => {
+  // 等待 A-Frame scene 真正加载完成，而非硬编码 500ms
+  const aframeScene = document.querySelector('a-scene')
+  if (aframeScene && aframeScene.hasLoaded) {
+    // A-Frame 已经加载好了（热更新/二次进入）
+    startVrInit()
+  } else if (aframeScene) {
+    // A-Frame 还在加载中
+    aframeScene.addEventListener('loaded', startVrInit, { once: true })
+  }
+  // 兜底：3 秒后强制初始化（防止 A-Frame CDN 加载失败导致永远不触发）
+  const fallbackTimer = setTimeout(() => {
+    if (!vrInitialized) startVrInit()
+  }, 3000)
+
+  function startVrInit() {
+    clearTimeout(fallbackTimer)
+    // 去重：防止 fallback + loaded 事件双重触发
+    if (vrInitialized) return
+    vrInitialized = true
+
     cacheButtonNames()
     cacheDomRefs()
+    if (!sceneEl) {
+      console.error('[VrScene] A-Frame scene 未找到，VR 初始化失败')
+      vrInitialized = false
+      return
+    }
+    console.log('[VrScene] 初始化开始...')
     initControllerUpdater()
     initDataPanel()
     initVideoScreen()
     setupRendererAnimationLoop()
-  }, 500)
+  }
 })
 
 onUnmounted(() => {
   if (sceneEl && sceneEl.renderer) {
     sceneEl.renderer.setAnimationLoop(null)
   }
+  // 清理视频屏幕
   if (videoScreenEntity && videoScreenMesh) {
-    videoScreenEntity.object3D.remove(videoScreenMesh)
+    videoScreenEntity.object3D?.remove(videoScreenMesh)
     videoScreenMesh.geometry?.dispose()
+    videoScreenMesh.material?.map?.dispose()
     videoScreenMesh.material?.dispose()
     videoScreenMesh = null
   }
@@ -123,11 +153,26 @@ onUnmounted(() => {
     videoTexture.dispose()
     videoTexture = null
   }
+  // 清理数据面板（之前遗漏，导致进出 VR 显存泄漏）
+  if (dataPanelMesh) {
+    const panelEntity = document.querySelector('#dataPanel')
+    panelEntity?.object3D?.remove(dataPanelMesh)
+    dataPanelMesh.geometry?.dispose()
+    dataPanelMesh.material?.map?.dispose()
+    dataPanelMesh.material?.dispose()
+    dataPanelMesh = null
+  }
+  if (dataPanelTexture) {
+    dataPanelTexture.dispose()
+    dataPanelTexture = null
+  }
+  dataPanelContext = null
   cleanupEventListeners()
   sceneEl = leftHand = rightHand = null
   leftHandInfoText = rightHandInfoText = null
   videoScreenEntity = null
   cachedButtonNames = null
+  vrInitialized = false
 })
 
 function cacheDomRefs() {
@@ -280,21 +325,19 @@ function initDataPanel() {
   const dataPanelEntity = document.querySelector('#dataPanel')
   if (!dataPanelEntity) return
   const canvas = document.createElement('canvas')
-  canvas.width = 3840
-  canvas.height = 1200
+  canvas.width = 2048
+  canvas.height = 640
   dataPanelContext = canvas.getContext('2d')
   dataPanelTexture = new THREE.CanvasTexture(canvas)
   dataPanelTexture.minFilter = THREE.LinearFilter
   dataPanelTexture.magFilter = THREE.LinearFilter
-  // 预渲染背景、边框，后续只做增量更新（性能关键）
+  // 预渲染背景、边框
   dataPanelContext.fillStyle = 'rgba(0, 0, 0, 0.85)'
   dataPanelContext.fillRect(0, 0, canvas.width, canvas.height)
   dataPanelContext.strokeStyle = '#00ffff'
   dataPanelContext.lineWidth = 8
   dataPanelContext.strokeRect(10, 10, canvas.width - 20, canvas.height - 20)
-  // 保存背景快照用于快速恢复
-  const bgSnapshot = dataPanelContext.getImageData(0, 0, canvas.width, canvas.height)
-  dataPanelTexture._bgSnapshot = bgSnapshot
+
   const geometry = new THREE.PlaneGeometry(3.0, 0.95)
   const material = new THREE.MeshBasicMaterial({
     map: dataPanelTexture, side: THREE.DoubleSide, transparent: true,
@@ -303,39 +346,20 @@ function initDataPanel() {
   dataPanelMesh = new THREE.Mesh(geometry, material)
   dataPanelMesh.renderOrder = 1000
   dataPanelEntity.object3D.add(dataPanelMesh)
+
+  // getImageData 是同步 GPU→CPU 读回，延后到下一帧执行，避免与 A-Frame WebGL 初始化抢主线程
+  requestAnimationFrame(() => {
+    if (!dataPanelContext || !dataPanelTexture) return
+    dataPanelTexture._bgSnapshot = dataPanelContext.getImageData(0, 0, canvas.width, canvas.height)
+  })
 }
 
 function initVideoScreen() {
   if (!videoScreenEntity) return
-  let attempts = 0
-  const maxAttempts = 60  // 最多等 30 秒
 
-  const tryCreate = () => {
-    const videoEl = webrtcRef.value?.getVideoEl?.()
-    if (!videoEl) {
-      if (attempts++ < 20) { setTimeout(tryCreate, 500); return }
-      console.warn('[VrScene] 未获取到视频元素')
-      return
-    }
-    // 直接检查 video 元素状态，不依赖 connectionState ref 的解包
-    const hasStream = videoEl.srcObject !== null
-    const hasFrames = videoEl.readyState >= 2  // HAVE_CURRENT_DATA
-    const hasSize = videoEl.videoWidth > 0 && videoEl.videoHeight > 0
-    console.log('[VrScene] 视频状态:', {
-      hasStream, hasFrames, hasSize,
-      readyState: videoEl.readyState,
-      size: `${videoEl.videoWidth}x${videoEl.videoHeight}`,
-      paused: videoEl.paused,
-    })
-    if (!hasStream || !hasFrames || !hasSize) {
-      if (attempts++ < maxAttempts) { setTimeout(tryCreate, 500); return }
-      console.warn('[VrScene] 视频流超时未就绪 (stream=', hasStream, ', frames=', hasFrames, ', size=', hasSize, ')')
-      return
-    }
-    // 确保视频在播放
-    if (videoEl.paused) {
-      videoEl.play().catch(e => console.warn('[VrScene] play 失败:', e))
-    }
+  let startTimeoutId = null
+
+  const createVideoTexture = (videoEl) => {
     try {
       videoTexture = new THREE.VideoTexture(videoEl)
       videoTexture.minFilter = THREE.LinearFilter
@@ -354,31 +378,91 @@ function initVideoScreen() {
       console.warn('[VrScene] 视频屏幕初始化失败:', e)
     }
   }
+
+  const tryCreate = () => {
+    const videoEl = webrtcRef.value?.getVideoEl?.()
+    if (!videoEl) {
+      // 视频元素还没挂载，300ms 后重试
+      startTimeoutId = setTimeout(tryCreate, 300)
+      return
+    }
+
+    // 如果视频已有尺寸，直接创建
+    if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+      createVideoTexture(videoEl)
+      return
+    }
+
+    // 有流就先播放
+    if (videoEl.srcObject && videoEl.paused) {
+      videoEl.play().catch(e => console.warn('[VrScene] play 失败:', e))
+    }
+
+    // 监听 loadedmetadata 事件（视频元数据加载完成 = videoWidth/Height 可用）
+    const onReady = () => {
+      videoEl.removeEventListener('loadedmetadata', onReady)
+      clearTimeout(fallbackTimer)
+      if (!videoScreenMesh && videoEl.videoWidth > 0) {
+        createVideoTexture(videoEl)
+      }
+    }
+    videoEl.addEventListener('loadedmetadata', onReady)
+
+    // 兜底：30 秒超时
+    const fallbackTimer = setTimeout(() => {
+      videoEl.removeEventListener('loadedmetadata', onReady)
+      if (!videoScreenMesh) {
+        console.warn('[VrScene] 视频尺寸超时未就绪')
+      }
+    }, 30000)
+  }
+
+  // 延迟 1.5 秒等 WebrtcVideo 组件挂载
   setTimeout(tryCreate, 1500)
 }
 
-function setupRendererAnimationLoop() {
-  if (!sceneEl || !sceneEl.renderer) return
+function setupRendererAnimationLoop(retryCount = 0) {
+  const maxRetries = 20  // 最多等 2 秒（每 100ms 重试一次）
+
+  if (!sceneEl) {
+    console.warn('[VrScene] sceneEl 为空，无法注册渲染循环')
+    return
+  }
+  if (!sceneEl.renderer) {
+    if (retryCount < maxRetries) {
+      setTimeout(() => setupRendererAnimationLoop(retryCount + 1), 100)
+    } else {
+      console.error('[VrScene] renderer 始终未就绪，渲染循环注册失败')
+    }
+    return
+  }
 
   // 注册 A-Frame 组件（只注册一次）
   if (!sceneEl.hasAttribute('data-panel-updater')) {
     sceneEl.setAttribute('data-panel-updater', '')
-    AFRAME.registerComponent('data-panel-updater', {
-      tick: function() {
-        onVrTick(sceneEl)
-      }
-    })
+    // 检查组件是否已在 AFRAME 全局注册过（HMR 热更新可能导致重复注册）
+    if (!AFRAME.components['data-panel-updater']) {
+      AFRAME.registerComponent('data-panel-updater', {
+        tick: function() {
+          // 用 this.el 而不是全局 sceneEl——this.el 生命周期与组件一致，永不为 null
+          onVrTick(this.el)
+        }
+      })
+    }
+    console.log('[VrScene] data-panel-updater 组件已注册')
   }
 }
 
-function onVrTick(sceneEl) {
-  if (!sceneEl.renderer?.xr?.isPresenting) return
+function onVrTick(scene) {
+  // 防御：scene 可能为 null（组件卸载过程中 tick 仍可能被调用）
+  if (!scene) return
+  if (!scene.renderer?.xr?.isPresenting) return
 
-  const frame = sceneEl.frame
+  const frame = scene.frame
   if (!frame) return
 
-  const referenceSpace = sceneEl.renderer.xr.getReferenceSpace()
-  const session = sceneEl.renderer.xr.getSession()
+  const referenceSpace = scene.renderer.xr.getReferenceSpace()
+  const session = scene.renderer.xr.getSession()
   if (!referenceSpace || !session) return
 
   const now = performance.now()
@@ -394,7 +478,7 @@ function onVrTick(sceneEl) {
   // ---- VR 数据采集 + WS 发送（节流 ~30fps）----
   let vrData = null
   if (now - lastWsSendTime >= WS_SEND_INTERVAL) {
-    vrData = getFullVRData(sceneEl, frame)
+    vrData = getFullVRData(scene, frame)
     sendVRData(vrData)
     lastWsSendTime = now
   }
@@ -402,7 +486,7 @@ function onVrTick(sceneEl) {
   // ---- 数据面板重绘（节流 ~10fps，最重的操作）----
   if (now - lastPanelRedrawTime >= PANEL_REDRAW_INTERVAL) {
     // 如果本轮没取过 vrData，补取一次
-    if (!vrData) vrData = getFullVRData(sceneEl, frame)
+    if (!vrData) vrData = getFullVRData(scene, frame)
     updateDataPanelInFrame(vrData)
     lastPanelRedrawTime = now
   }
@@ -462,7 +546,7 @@ function updateDataPanelInFrame(vrData) {
   const ctx = dataPanelContext
   const canvas = dataPanelTexture.image
 
-  // 用背景快照恢复，替代 clearRect + fillRect + strokeRect（避免重复绘制 4.6M 像素背景）
+  // 用背景快照恢复，替代 clearRect + fillRect + strokeRect（避免重复绘制 1.3M 像素背景）
   const bg = dataPanelTexture._bgSnapshot
   if (bg) {
     ctx.putImageData(bg, 0, 0)
@@ -472,13 +556,13 @@ function updateDataPanelInFrame(vrData) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.strokeStyle = '#00ffff'
-    ctx.lineWidth = 8
-    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20)
+    ctx.lineWidth = 4
+    ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10)
   }
   ctx.fillStyle = '#00ffff'
-  ctx.font = 'bold 70px monospace'
+  ctx.font = 'bold 36px monospace'
   ctx.textAlign = 'center'
-  ctx.fillText('◈ DATA CENTER ◈', canvas.width / 2, 90)
+  ctx.fillText('◈ DATA CENTER ◈', canvas.width / 2, 48)
 
   let headsetPos = 'N/A'
   let headsetRot = 'N/A'
@@ -489,14 +573,14 @@ function updateDataPanelInFrame(vrData) {
     headsetRot = `${quat.x.toFixed(2)}, ${quat.y.toFixed(2)}, ${quat.z.toFixed(2)}`
   }
   ctx.fillStyle = '#00ff88'
-  ctx.font = 'bold 55px monospace'
-  ctx.fillText('HEADSET', canvas.width / 2, 170)
+  ctx.font = 'bold 28px monospace'
+  ctx.fillText('HEADSET', canvas.width / 2, 90)
   ctx.fillStyle = '#ffffff'
-  ctx.font = '45px monospace'
-  ctx.fillText('POS: ' + headsetPos, canvas.width / 2, 230)
-  ctx.fillText('ROT: ' + headsetRot, canvas.width / 2, 280)
-  displayControllerData(ctx, vrData?.leftController, 'left', 100)
-  displayControllerData(ctx, vrData?.rightController, 'right', canvas.width - 100)
+  ctx.font = '24px monospace'
+  ctx.fillText('POS: ' + headsetPos, canvas.width / 2, 122)
+  ctx.fillText('ROT: ' + headsetRot, canvas.width / 2, 150)
+  displayControllerData(ctx, vrData?.leftController, 'left', 50)
+  displayControllerData(ctx, vrData?.rightController, 'right', canvas.width - 50)
   dataPanelTexture.needsUpdate = true
 }
 
@@ -504,18 +588,18 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
   const isLeft = hand === 'left'
   ctx.textAlign = isLeft ? 'left' : 'right'
   ctx.fillStyle = isLeft ? '#00ff88' : '#ff6688'
-  ctx.font = 'bold 65px monospace'
-  ctx.shadowBlur = 30
+  ctx.font = 'bold 34px monospace'
+  ctx.shadowBlur = 16
   ctx.shadowColor = isLeft ? '#00ff88' : '#ff6688'
-  ctx.fillText(isLeft ? '◈ LEFT ◈' : '◈ RIGHT ◈', xPos, 150)
+  ctx.fillText(isLeft ? '◈ LEFT ◈' : '◈ RIGHT ◈', xPos, 80)
   ctx.shadowBlur = 0
   if (!controller) {
     ctx.fillStyle = '#666666'
-    ctx.font = '42px monospace'
-    ctx.fillText(isLeft ? '未检测到左手柄' : '未检测到右手柄', xPos, 210)
+    ctx.font = '22px monospace'
+    ctx.fillText(isLeft ? '未检测到左手柄' : '未检测到右手柄', xPos, 112)
     return
   }
-  if (controller.buttons[12]?.pressed) { restartSystem(); return }
+  if (controller.buttons?.[12]?.pressed) { restartSystem(); return }
   let posText = 'POS: 0.00, 0.00, 0.00'
   let rotText = 'ROT: 0.00, 0.00, 0.00'
   if (controller.position && controller.quaternion) {
@@ -525,30 +609,32 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
     rotText = `ROT: ${quat.x.toFixed(2)}, ${quat.y.toFixed(2)}, ${quat.z.toFixed(2)}`
   }
   ctx.fillStyle = isLeft ? '#00ffcc' : '#ff99aa'
-  ctx.font = '42px monospace'
-  ctx.fillText(posText, xPos, 200)
-  ctx.fillText(rotText, xPos, 250)
+  ctx.font = '22px monospace'
+  ctx.fillText(posText, xPos, 106)
+  ctx.fillText(rotText, xPos, 134)
   ctx.fillStyle = '#00ffff'
-  ctx.font = 'bold 48px monospace'
-  ctx.shadowBlur = 20
+  ctx.font = 'bold 26px monospace'
+  ctx.shadowBlur = 10
   ctx.shadowColor = '#00ffff'
-  const joyX = controller.joystick.x.toFixed(2)
-  const joyY = controller.joystick.y.toFixed(2)
-  ctx.fillText(`JOY: ${joyX}, ${joyY}`, xPos, 310)
+  const joyX = controller.joystick?.x?.toFixed(2) ?? '0.00'
+  const joyY = controller.joystick?.y?.toFixed(2) ?? '0.00'
+  ctx.fillText(`JOY: ${joyX}, ${joyY}`, xPos, 165)
   ctx.shadowBlur = 0
+  const buttons = controller.buttons
+  if (!buttons || buttons.length === 0) return
   ctx.fillStyle = '#ffffff'
-  ctx.font = '45px monospace'
-  let yPos = 370
-  for (let i = 0; i < controller.buttons.length && yPos < 1150; i++) {
-    const btn = controller.buttons[i]
+  ctx.font = '24px monospace'
+  let yPos = 198
+  for (let i = 0; i < buttons.length && yPos < 610; i++) {
+    const btn = buttons[i]
     const name = getButtonName(btn.index, hand)
     const value = btn.value.toFixed(2)
     const text = `${name}: ${value}`
-    if (btn.value > 0.5) { ctx.fillStyle = '#ff6600'; ctx.shadowBlur = 20; ctx.shadowColor = '#ff6600' }
-    else if (btn.value > 0) { ctx.fillStyle = '#ffaa00'; ctx.shadowBlur = 10; ctx.shadowColor = '#ffaa00' }
+    if (btn.value > 0.5) { ctx.fillStyle = '#ff6600'; ctx.shadowBlur = 10; ctx.shadowColor = '#ff6600' }
+    else if (btn.value > 0) { ctx.fillStyle = '#ffaa00'; ctx.shadowBlur = 5; ctx.shadowColor = '#ffaa00' }
     else { ctx.fillStyle = '#666666'; ctx.shadowBlur = 0 }
     ctx.fillText(text, xPos, yPos)
-    yPos += 50
+    yPos += 26
   }
   ctx.shadowBlur = 0
 }
