@@ -843,17 +843,23 @@ const fetchAvailablePorts = async () => {
 
     const response = await api.listPorts()
     const ports = response.data?.ports || []
-     // ✅ 添加 CAN 接口
+    // 补充 CAN 接口（舵机和电机同等重要）
     if (!ports.includes('can0')) {
-      ports.unshift('can0')  // 放在最前面
+      ports.push('can0')
     }
     servoStore.setAvailablePorts(ports)
-    if (ports.length > 0 && port.value === '/dev/ttyACM0') {
-      port.value = ports[0]
+    // 自动选端口：根据当前电机类型智能匹配
+    if (ports.length > 0 && (port.value === '/dev/ttyACM0' || port.value === 'can0')) {
+      if (servoType.value === 'robstride') {
+        port.value = ports.includes('can0') ? 'can0' : ports[0]
+      } else {
+        const serialPort = ports.find(p => p.startsWith('/dev/tty'))
+        port.value = serialPort || ports[0]
+      }
     }
   } catch (error) {
     console.error('获取串口列表失败:', error)
-    const defaultPorts = ['can0', '/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
+    const defaultPorts = ['/dev/ttyACM0', 'can0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
     servoStore.setAvailablePorts(defaultPorts)
   }
 }
