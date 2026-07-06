@@ -27,6 +27,7 @@ export function useWebRTC(videoRef) {
   const iceConnectionState = ref('')
   const error = ref('')
   const micEnabled = ref(false)
+  const micUnavailable = ref(false)  // 设备不支持麦克风（如 VR 眼镜）
 
   let ws = null
   let pc = null
@@ -34,6 +35,7 @@ export function useWebRTC(videoRef) {
   let remoteAudioEl = null  // 播放 terminal 传来的音频
   let localMicStream = null  // 本地麦克风 MediaStream
   let localAudioTrack = null
+  let micErrorTimer = null
 
   const stateLabel = () => {
     const map = {
@@ -269,10 +271,23 @@ export function useWebRTC(videoRef) {
         console.log('[Camera] 麦克风 track 已添加到 PC')
       }
       micEnabled.value = true
+      micUnavailable.value = false
       return true
     } catch (e) {
-      console.error('[Camera] 麦克风开启失败:', e)
-      error.value = '麦克风权限被拒绝或设备不可用'
+      console.error('[Camera] 麦克风开启失败:', e.name, e.message)
+      // NotFoundError: 设备没有麦克风（VR眼镜常见）
+      // NotAllowedError: 用户拒绝或浏览器不支持非 HTTPS 访问麦克风
+      if (e.name === 'NotFoundError') {
+        micUnavailable.value = true
+        if (micErrorTimer) clearTimeout(micErrorTimer)
+        micErrorTimer = setTimeout(() => { micUnavailable.value = false }, 8000)
+      } else {
+        error.value = e.name === 'NotAllowedError'
+          ? '麦克风权限被拒绝，请在浏览器设置中允许'
+          : `麦克风异常: ${e.message}`
+        if (micErrorTimer) clearTimeout(micErrorTimer)
+        micErrorTimer = setTimeout(() => { error.value = '' }, 6000)
+      }
       return false
     }
   }
@@ -317,7 +332,7 @@ export function useWebRTC(videoRef) {
   onUnmounted(stop)
 
   return {
-    connectionState, iceConnectionState, error, stateLabel, micEnabled,
+    connectionState, iceConnectionState, error, stateLabel, micEnabled, micUnavailable,
     start, stop, enableMic, disableMic,
   }
 }

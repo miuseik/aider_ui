@@ -437,33 +437,38 @@ function setupRendererAnimationLoop(retryCount = 0) {
     return
   }
 
-  // 注册 A-Frame 组件（只注册一次）
-  if (!sceneEl.hasAttribute('data-panel-updater')) {
-    sceneEl.setAttribute('data-panel-updater', '')
-    // 检查组件是否已在 AFRAME 全局注册过（HMR 热更新可能导致重复注册）
-    if (!AFRAME.components['data-panel-updater']) {
-      AFRAME.registerComponent('data-panel-updater', {
-        tick: function() {
-          // 用 this.el 而不是全局 sceneEl——this.el 生命周期与组件一致，永不为 null
-          onVrTick(this.el)
-        }
-      })
-    }
-    console.log('[VrScene] data-panel-updater 组件已注册')
+  // 注册 A-Frame 组件
+  // 先移除旧组件实例（解决 HMR/二次进入时组件可能残留的问题）
+  if (sceneEl.hasAttribute('data-panel-updater')) {
+    sceneEl.removeAttribute('data-panel-updater')
   }
+  // 始终用最新的 tick 重新注册，确保闭包引用到当前模块的 onVrTick
+  if (AFRAME.components['data-panel-updater']) {
+    delete AFRAME.components['data-panel-updater']
+  }
+  AFRAME.registerComponent('data-panel-updater', {
+    tick: function() {
+      onVrTick(this.el)
+    }
+  })
+  sceneEl.setAttribute('data-panel-updater', '')
+  console.log('[VrScene] data-panel-updater 组件已注册')
 }
 
 function onVrTick(scene) {
   // 防御：scene 可能为 null（组件卸载过程中 tick 仍可能被调用）
   if (!scene) return
-  if (!scene.renderer?.xr?.isPresenting) return
+  if (!scene.renderer) return
+
+  // 用 getSession() 判断是否处于 VR 模式，替代不可靠的 isPresenting
+  const session = scene.renderer.xr.getSession()
+  if (!session) return
 
   const frame = scene.frame
   if (!frame) return
 
   const referenceSpace = scene.renderer.xr.getReferenceSpace()
-  const session = scene.renderer.xr.getSession()
-  if (!referenceSpace || !session) return
+  if (!referenceSpace) return
 
   const now = performance.now()
 
@@ -579,8 +584,8 @@ function updateDataPanelInFrame(vrData) {
   ctx.font = '24px monospace'
   ctx.fillText('POS: ' + headsetPos, canvas.width / 2, 122)
   ctx.fillText('ROT: ' + headsetRot, canvas.width / 2, 150)
-  displayControllerData(ctx, vrData?.leftController, 'left', 50)
-  displayControllerData(ctx, vrData?.rightController, 'right', canvas.width - 50)
+  displayControllerData(ctx, canvas, vrData?.leftController, 'left', 50)
+  displayControllerData(ctx, canvas, vrData?.rightController, 'right', canvas.width - 50)
   dataPanelTexture.needsUpdate = true
 }
 

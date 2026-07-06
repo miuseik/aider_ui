@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useWebRTC } from '@/composables/useWebRTC.js'
 
 const videoRef = ref(null)
-const { connectionState, iceConnectionState, error, stateLabel, micEnabled, start, stop, enableMic, disableMic } = useWebRTC(videoRef)
+const { connectionState, iceConnectionState, error, stateLabel, micEnabled, micUnavailable, start, stop, enableMic, disableMic } = useWebRTC(videoRef)
 
 const isConnected = computed(() => connectionState.value === 'connected')
 const isLoading = computed(() => connectionState.value === 'connecting')
@@ -58,10 +58,11 @@ function toggleMic() {
         <button
           v-if="isConnected"
           class="btn-mic"
-          :class="{ active: micEnabled }"
+          :class="{ active: micEnabled, unavailable: micUnavailable }"
+          :disabled="micUnavailable"
           @click="toggleMic"
-          :title="micEnabled ? '关闭麦克风' : '开启麦克风'"
-        >{{ micEnabled ? '🎤' : '🔇' }}</button>
+          :title="micUnavailable ? '此设备无麦克风' : micEnabled ? '关闭麦克风' : '开启麦克风'"
+        >{{ micUnavailable ? '🚫' : micEnabled ? '🎤' : '🔇' }}</button>
         <button v-if="isConnected" class="btn btn-stop" @click="stop">断开</button>
       </div>
     </div>
