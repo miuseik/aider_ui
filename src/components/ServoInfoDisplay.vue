@@ -15,7 +15,7 @@
     >
       📋
     </button>
-    <div v-if="loading" class="loading-text">加载中...</div>
+    <span v-if="loading" class="loading-text">加载中...</span>
   </div>
 </template>
 
@@ -134,5 +134,7 @@ defineExpose({
   font-size: 11px;
   color: #6b7280;
   font-style: italic;
+  position: absolute;
+  right: 0;
 }
 </style>

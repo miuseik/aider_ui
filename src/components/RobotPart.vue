@@ -3,8 +3,8 @@
     <div class="part-title">{{ title }}</div>
     <div class="servo-list">
       <template v-for="(servo, idx) in displayServos" :key="servo.key || idx">
-        <!-- 有舵机：三行卡片 -->
-        <div class="servo-item" v-if="servo.servoId">
+        <!-- 有舵机：三行卡片 + 可选校准行 -->
+        <div class="servo-item" v-if="servo.servoId" :class="{ 'is-feetech': servo.isFeetech }">
           <div class="label-row">
             <span class="servo-label">{{ getServoLabel(servo.key) }}</span>
             <span class="angle">{{ getAngle(servo.servoId) }}°</span>
@@ -13,14 +13,50 @@
             </span>
           </div>
           <div class="slider-row">
+            <button class="step-btn" @click="stepAngle(servo.servoId, -1)" title="-1°">◀</button>
             <input type="range" :value="getAngle(servo.servoId)"
               @input="e => { setAngle(servo.servoId, +e.target.value); updateAngle(servo.servoId) }"
               min="-180" max="180" class="slider" />
+            <button class="step-btn" @click="stepAngle(servo.servoId, 1)" title="+1°">▶</button>
+          </div>
+          <div class="input-row">
+            <input type="number" class="angle-input" 
+              :value="getServoInput(servo.servoId)"
+              @input="e => servoInputMap.set(servo.servoId, e.target.value)"
+              min="-180" max="180" step="0.1"
+              @keydown.enter="confirmAngle(servo.servoId)" />
+            <button class="btn-confirm" @click="confirmAngle(servo.servoId)" title="确认角度">✓</button>
           </div>
           <div class="btns-row">
             <button @click="$emit('claim', partName, idx + 1)" :disabled="scanning" title="认领">🔍</button>
             <button @click="$emit('ping', partName, idx + 1)" :disabled="scanning" title="Ping" class="amber">📡</button>
             <button @click="$emit('calibrate', partName, idx + 1)" :disabled="scanning" title="校准" class="purple">⚙️</button>
+          </div>
+          <!-- Feetech 舵机：零位偏移量 + 记录按钮 -->
+          <div v-if="servo.isFeetech && showCalibration" class="offset-row">
+            <span class="offset-label">零位偏移</span>
+            <span class="offset-value" :class="{ changed: servo.zeroOffset !== 0 }">
+              {{ fmtOffset(servo.zeroOffset) }}°
+            </span>
+            <button
+              class="btn-offset"
+              :disabled="!getServoStatus(servo.servoId).online || calibrating"
+              @click="emit('recordOffset', partName, servo.key, servo.servoId)"
+              title="读取当前位置，计算并记录零位偏移"
+            >
+              记录零位
+            </button>
+          </div>
+          <!-- 非 Feetech：设置零位 -->
+          <div v-else-if="!servo.isFeetech && showCalibration" class="offset-row">
+            <button
+              class="btn-offset motor-zero"
+              :disabled="!getServoStatus(servo.servoId).online || calibrating"
+              @click="emit('setZero', partName, servo.key, servo.servoId)"
+              title="将当前位置设置为电机的零位参考点"
+            >
+              设置零位
+            </button>
           </div>
         </div>
         <!-- 无舵机：空占位 -->
@@ -36,43 +72,61 @@
 import { ref, computed, inject } from 'vue'
 
 const props = defineProps({
-  title: {
-    type: String,
-    required: true
-  },
-  servos: {
-    type: Array,
-    default: () => []
-  },
-  partName: {
-    type: String,
-    required: true
-  },
-  scanning: {
-    type: Boolean,
-    default: false
-  }
+  title: { type: String, required: true },
+  servos: { type: [Array, Object], default: () => [] },
+  partName: { type: String, required: true },
+  scanning: { type: Boolean, default: false },
+  /** 是否显示零位校准控件 */
+  showCalibration: { type: Boolean, default: true },
+  /** 是否正在校准中 */
+  calibrating: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['claim', 'ping', 'calibrate', 'update-angle'])
+const emit = defineEmits(['claim', 'ping', 'calibrate', 'update-angle', 'recordOffset', 'setZero'])
 
 // 注入 foundServos
 const foundServos = inject('foundServos', { value: [] })
 
-// 每个舵机的角度状态（用 Map 存储）
-const angleMap = ref(new Map())
+// 用户手动拖动的角度（仅记录用户操作后的值）
+const userAngleMap = ref(new Map())
 
-// 获取或初始化角度
+// 获取角度：优先用户手动值，否则读取 foundServos 实时数据
 const getAngle = (servoId) => {
-  if (!angleMap.value.has(servoId)) {
-    angleMap.value.set(servoId, 0)
+  if (userAngleMap.value.has(servoId)) {
+    return userAngleMap.value.get(servoId)
   }
-  return angleMap.value.get(servoId)
+  const found = foundServos.value.find(s => s.id === servoId)
+  return found?.angle ?? 0
 }
 
-// 设置角度
+// 设置角度（用户拖动滑块）
 const setAngle = (servoId, value) => {
-  angleMap.value.set(servoId, value)
+  userAngleMap.value.set(servoId, value)
+}
+
+// 箭头微调：按步长增减角度
+const stepAngle = (servoId, delta) => {
+  const current = getAngle(servoId)
+  const next = Math.round(current + delta)
+  setAngle(servoId, next)
+  updateAngle(servoId)
+}
+
+// 精确输入
+const servoInputMap = ref(new Map())
+const getServoInput = (servoId) => {
+  if (!servoInputMap.value.has(servoId)) {
+    servoInputMap.value.set(servoId, String(getAngle(servoId)))
+  }
+  return servoInputMap.value.get(servoId)
+}
+const confirmAngle = (servoId) => {
+  const val = parseFloat(servoInputMap.value.get(servoId))
+  if (isNaN(val)) return
+  const clamped = Math.max(-180, Math.min(180, val))
+  setAngle(servoId, clamped)
+  servoInputMap.value.set(servoId, String(clamped))
+  updateAngle(servoId)
 }
 
 // 更新角度（防抖）
@@ -89,20 +143,40 @@ const updateAngle = (servoId) => {
 }
 
 const displayServos = computed(() => {
-  if (props.servos.length === 0) {
+  const entries = []
+
+  if (props.servos && typeof props.servos === 'object' && !Array.isArray(props.servos)) {
+    // 对象格式（脖子、升降轴、胳膊、底盘）
+    for (const [key, config] of Object.entries(props.servos)) {
+      const isObj = typeof config === 'object' && config !== null
+      const servoId = isObj ? config.id : config
+      const brand = (isObj && config.brand) || ''
+      entries.push({
+        key,
+        servoId,
+        brand: brand.toLowerCase(),
+        isFeetech: brand.toLowerCase().startsWith('feetech'),
+        zeroOffset: isObj ? (config.zero_offset ?? 0) : 0,
+      })
+    }
+  } else if (Array.isArray(props.servos)) {
+    for (const item of props.servos) {
+      if (item && item.key) {
+        const brand = (item.brand || '').toLowerCase()
+        entries.push({
+          ...item,
+          brand,
+          isFeetech: brand.startsWith('feetech'),
+          zeroOffset: item.zero_offset ?? 0,
+        })
+      }
+    }
+  }
+
+  if (entries.length === 0) {
     return [{ key: 'empty', servoId: null }]
   }
-  
-  // 如果是对象格式（脖子、升降轴）
-  if (props.servos[0]?.key) {
-    return props.servos
-  }
-  
-  // 如果是数组格式（胳膊、底盘）
-  return Object.entries(props.servos).map(([key, config]) => ({
-    key,
-    servoId: typeof config === 'object' ? config.id : config
-  }))
+  return entries
 })
 
 const getServoStatus = (servoId) => {
@@ -141,6 +215,13 @@ const getServoLabel = (key) => {
   }
   return labelMap[key] || key
 }
+
+/** 格式化偏移量 */
+function fmtOffset(val) {
+  if (val == null) return '0.00'
+  const n = Number(val)
+  return (n >= 0 ? '+' : '') + n.toFixed(2)
+}
 </script>
 
 <style scoped>
@@ -167,8 +248,19 @@ const getServoLabel = (key) => {
   color: #9ca3af;
 }
 
-/* 行2：滑条通栏 */
-.slider-row { margin-bottom: 4px; }
+/* 行2：滑条 + 左右箭头 */
+.slider-row {
+  display: flex; align-items: center; gap: 3px;
+  margin-bottom: 4px;
+}
+.step-btn {
+  width: 18px; height: 18px; padding: 0; border: none; border-radius: 3px;
+  font-size: 9px; cursor: pointer; transition: all .15s;
+  background: #2d3139; color: #9ca3af;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.step-btn:hover { background: #3b82f6; color: #fff; }
 .slider {
   width: 100%; height: 4px; border-radius: 2px; background: #2d3139;
   outline: none; -webkit-appearance: none; cursor: pointer;
@@ -178,7 +270,30 @@ const getServoLabel = (key) => {
   border-radius: 50%; background: #3b82f6; cursor: pointer;
 }
 
-/* 行3：按钮 */
+/* 行3：精确输入 */
+.input-row {
+  display: flex; align-items: center; gap: 3px;
+  margin-bottom: 4px;
+}
+.angle-input {
+  width: 100%; height: 22px; padding: 0 5px; border: 1px solid #2d3139;
+  border-radius: 3px; background: #111318; color: #e2e8f0;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace; text-align: center;
+  outline: none; transition: border-color .15s;
+}
+.angle-input:focus { border-color: #3b82f6; }
+.angle-input::-webkit-inner-spin-button,
+.angle-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.btn-confirm {
+  width: 26px; height: 22px; padding: 0; border: 1px solid #059669;
+  border-radius: 3px; background: transparent; color: #34d399;
+  font-size: 12px; cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.btn-confirm:hover { background: #059669; color: #fff; }
+
+/* 行4：按钮 */
 .btns-row { display: flex; gap: 4px; }
 .btns-row button {
   width: 22px; height: 22px; padding: 0; border: none; border-radius: 3px;
@@ -190,6 +305,68 @@ const getServoLabel = (key) => {
 .btns-row button.purple { background: #8b5cf6; }
 .btns-row button:disabled { opacity: .35; cursor: not-allowed; }
 .btns-row button:not(:disabled):hover { transform: scale(1.15); }
+
+/* 偏移量行 */
+.offset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid #2d3139;
+  font-size: 11px;
+}
+.offset-row.hint {
+  color: #6b7280;
+  font-size: 10px;
+  border-top-style: dashed;
+}
+.offset-label {
+  color: #6b7280;
+}
+.offset-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: #9ca3af;
+}
+.offset-value.changed {
+  color: #f59e0b;
+}
+.btn-offset {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid #3b82f6;
+  border-radius: 3px;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-offset:hover:not(:disabled) {
+  background: #3b82f6;
+  color: #fff;
+}
+.btn-offset.motor-zero {
+  margin-left: 0;
+  width: 100%;
+  border-color: #059669;
+  color: #34d399;
+}
+.btn-offset.motor-zero:hover:not(:disabled) {
+  background: #059669;
+  color: #fff;
+}
+.btn-offset:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Feetech 左边框标记 */
+.servo-item.is-feetech {
+  border-left: 3px solid #2563eb;
+}
 
 /* 状态标签 */
 .slot {

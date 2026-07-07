@@ -111,3 +111,21 @@ export function listPorts() {
 export function setServoZero(servoId, port) {
   return request.post('/servo/calibrate', { servo_id: servoId, port })
 }
+
+/**
+ * 触发 Terminal 批量校准所有舵机零位偏移量
+ * Terminal 读取编码器位置 → 反算 zero_offset → 即时生效 → 写回 YAML
+ * @param {string} port - 可选，不传则校准所有端口
+ */
+export function startBatchCalibrate(port) {
+  return request.post('/servo/start-batch-calibrate', { port })
+}
+
+/**
+ * 触发 Terminal 校准单个舵机的零位偏移量
+ * @param {number} servoId - 舵机 ID
+ * @param {string} port - 串口路径
+ */
+export function calibrateSingleOffset(servoId, port) {
+  return request.post('/servo/calibrate-offset', { servo_id: servoId, port })
+}

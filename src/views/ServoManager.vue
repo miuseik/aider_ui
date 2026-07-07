@@ -182,10 +182,17 @@
     <RobotHardwareInfo
       :robot-config="robotConfig"
       :scanning="scanning"
+      :show-calibration="true"
+      :calibrating="calibrating"
+      :last-result="lastCalibrationResult"
       @claim="claimSingleServo"
       @ping="pingServoByPart"
       @calibrate="calibrateServoByPart"
       @update-angle="handleUpdateAngle"
+      @batch-calibrate="handleBatchCalibrate"
+      @record-offset="handleRecordOffset"
+      @reset-all="handleResetAllOffsets"
+      @set-zero="handleSetZero"
     />
   </div>
 </template>
@@ -345,10 +352,27 @@ const claimServos = async () => {
     // 自动更新配置文件
     await saveServoConfig()
     
+    // 读取所有在线舵机的实际位置
+    await readAllServoPositions()
+    
   } catch (error) {
     console.error('扫描失败:', error)
   } finally {
     scanning.value = false
+  }
+}
+
+/** 批量读取所有在线舵机的当前角度并更新 foundServos */
+async function readAllServoPositions() {
+  for (const servo of foundServos.value) {
+    try {
+      const res = await api.getServoInfo(servo.id, servo.port)
+      if (res.code === 200 && res.data?.angle !== undefined) {
+        servo.angle = res.data.angle
+      }
+    } catch (e) {
+      console.warn(`读取舵机 ${servo.id} 位置失败:`, e)
+    }
   }
 }
 
@@ -542,6 +566,106 @@ const calibrateServoByPart = async (part, index) => {
   await calibrateServo(servoId, port)
 }
 
+// ==================== 零位校准面板 ====================
+
+const calibrating = ref(false)
+const lastCalibrationResult = ref('')
+
+/** 批量校准：触发 Terminal 读取全员位置，反算 zero_offset 并写回 YAML */
+async function handleBatchCalibrate() {
+  calibrating.value = true
+  lastCalibrationResult.value = ''
+  try {
+    const res = await api.startBatchCalibrate(port.value)
+    if (res.code === 200 || res.code === 503) {
+      // 200: 命令已发送, 503: Terminal 未连接
+      // 等待 Terminal 完成校准并写回配置（异步）
+      await new Promise(r => setTimeout(r, 3000))
+      // 重新加载配置
+      await servoStore.fetchServoIdConfig()
+      lastCalibrationResult.value = '配置已更新，请查看各关节偏移量'
+      ElMessage.success('批量校准完成，配置已更新')
+    } else {
+      ElMessage.error('批量校准触发失败')
+    }
+  } catch (e) {
+    console.error('批量校准失败:', e)
+    ElMessage.error(`校准失败: ${e.message}`)
+  } finally {
+    calibrating.value = false
+  }
+}
+
+/** 单舵机记录零位 */
+async function handleRecordOffset({ partName, jointKey, servoId }) {
+  try {
+    const res = await api.calibrateSingleOffset(servoId, port.value)
+    if (res.code === 200 || res.code === 503) {
+      await new Promise(r => setTimeout(r, 2000))
+      await servoStore.fetchServoIdConfig()
+      ElMessage.success(`${partName}.${jointKey} (ID:${servoId}) 零位已记录`)
+    } else {
+      ElMessage.error('记录失败')
+    }
+  } catch (e) {
+    console.error(`记录舵机 ${servoId} 零位失败:`, e)
+    ElMessage.error(`记录失败: ${e.message}`)
+  }
+}
+
+/** 电机设置零位 */
+async function handleSetZero({ partName, jointKey, servoId }) {
+  try {
+    const res = await api.setServoZero(servoId, port.value)
+    if (res.code === 200 || res.code === 503) {
+      await new Promise(r => setTimeout(r, 2000))
+      await servoStore.fetchServoIdConfig()
+      ElMessage.success(`${partName}.${jointKey} (ID:${servoId}) 零位已设置`)
+    } else {
+      ElMessage.error('设置失败')
+    }
+  } catch (e) {
+    console.error(`设置电机 ${servoId} 零位失败:`, e)
+    ElMessage.error(`设置失败: ${e.message}`)
+  }
+}
+
+/** 重置所有零位偏移为 0 */
+async function handleResetAllOffsets() {
+  if (!robotConfig.value) return
+  try {
+    // 将所有 zero_offset 设为 0
+    const configCopy = JSON.parse(JSON.stringify(robotConfig.value))
+    for (const partKey of Object.keys(configCopy)) {
+      const part = configCopy[partKey]
+      if (typeof part !== 'object') continue
+      for (const jointKey of Object.keys(part)) {
+        const joint = part[jointKey]
+        if (joint && typeof joint.zero_offset === 'number') {
+          joint.zero_offset = 0
+        }
+      }
+    }
+    // 保存到服务器
+    const role = 'aider'
+    await api.putServoIds({ config: configCopy, role })
+    await servoStore.fetchServoIdConfig()
+
+    // 通知 Terminal 重载配置
+    wsClient.send({
+      type: 'api_command',
+      category: 'motor',
+      action: 'reload_servo_config',
+    })
+
+    lastCalibrationResult.value = '所有偏移量已重置为 0'
+    ElMessage.success('偏移量已全部重置')
+  } catch (e) {
+    console.error('重置偏移量失败:', e)
+    ElMessage.error(`重置失败: ${e.message}`)
+  }
+}
+
 // ==================== 工具方法 ====================
 
 /**
@@ -690,9 +814,13 @@ const scanServos = async () => {
       }
     }
 
+    foundServos.value = allFoundServos
     // 更新 Pinia 状态
     servoStore.setScannedServos(allFoundServos)
     ElMessage.success(`扫描完成，在 ${portsToScan.length} 个端口中共找到 ${allFoundServos.length} 个舵机`)
+    
+    // 读取所有舵机的实际位置
+    await readAllServoPositions()
   } catch (error) {
     console.error('扫描失败:', error)
     ElMessage.error('扫描失败: ' + (error.response?.data?.message || error.message))
