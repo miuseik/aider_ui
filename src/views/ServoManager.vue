@@ -256,6 +256,11 @@ let updateTimer = null
 // 移除旧的处理器
 let removeHandler = null
 
+/** 从扫描结果查找舵机端口，找不到返回兜底值 */
+function getServoPort(servoId) {
+  return foundServos.value.find(s => s.id === servoId)?.port || '/dev/ttyACM0'
+}
+
 // 根据ID获取舵机信息（带状态）
 const getServoById = (id) => {
   const servo = foundServos.value.find(s => s.id === id)
@@ -367,8 +372,14 @@ async function readAllServoPositions() {
   for (const servo of foundServos.value) {
     try {
       const res = await api.getServoInfo(servo.id, servo.port)
-      if (res.code === 200 && res.data?.angle !== undefined) {
-        servo.angle = res.data.angle
+      if (res.code === 200 && res.data) {
+        if (res.data.angle !== undefined) {
+          servo.angle = res.data.angle
+        }
+        // 从响应中同步真实端口（USB重枚举后端口可能变化，或CAN设备端口与串口不同）
+        if (res.data.port && res.data.port !== servo.port) {
+          servo.port = res.data.port
+        }
       }
     } catch (e) {
       console.warn(`读取舵机 ${servo.id} 位置失败:`, e)
@@ -497,9 +508,7 @@ const pingServoByPart = async (part, index) => {
   const key = keys[index - 1]
   const servoId = partConfig[key].id
   
-  // 从扫描结果中找端口
-  const foundServo = foundServos.value.find(s => s.id === servoId)
-  const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+  const port = getServoPort(servoId)
   
   await pingServo(servoId, port)
 }
@@ -559,9 +568,7 @@ const calibrateServoByPart = async (part, index) => {
   const key = keys[index - 1]
   const servoId = partConfig[key].id
   
-  // 从扫描结果中找端口
-  const foundServo = foundServos.value.find(s => s.id === servoId)
-  const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+  const port = getServoPort(servoId)
   
   await calibrateServo(servoId, port)
 }
@@ -694,15 +701,13 @@ const setServoSpeed = async (servoId, speed, port) => {
   }
 }
 
-// 处理角度更新
-const handleUpdateAngle = async ({ servoId, angle }) => {
+// 处理角度更新（port 由 RobotPart 从 foundServos 查出来带上）
+const handleUpdateAngle = async ({ servoId, angle, port }) => {
   if (!servoId) return
   
-  // 从扫描结果中找端口
-  const foundServo = foundServos.value.find(s => s.id === servoId)
-  const port = foundServo ? foundServo.port : '/dev/ttyACM0'
+  const portToUse = port || '/dev/ttyACM0'
   
-  const success = await setServoAngle(servoId, angle, port)
+  const success = await setServoAngle(servoId, angle, portToUse)
   
   // ✅ 如果设置成功，触发刷新事件
   if (success) {

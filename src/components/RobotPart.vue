@@ -135,9 +135,11 @@ const updateAngle = (servoId) => {
   if (updateTimer) clearTimeout(updateTimer)
   
   updateTimer = setTimeout(() => {
+    const found = foundServos.value.find(s => s.id === servoId)
     emit('update-angle', {
       servoId,
-      angle: getAngle(servoId)
+      angle: getAngle(servoId),
+      port: found?.port
     })
   }, 100)
 }
@@ -181,10 +183,12 @@ const displayServos = computed(() => {
 
 const getServoStatus = (servoId) => {
   const servo = foundServos.value.find(s => s.id === servoId)
+  // 优先使用 servo.online 字段，不存在时 fallback 到 !!servo（老数据兼容）
+  const online = servo ? (servo.online !== undefined ? !!servo.online : true) : false
   return {
     id: servoId,
-    online: !!servo,
-    display: servo ? `ID:${servoId}` : `ID:${servoId} 离线`
+    online,
+    display: online ? `ID:${servoId}` : `ID:${servoId} 离线`
   }
 }
 

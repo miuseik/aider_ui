@@ -2,10 +2,10 @@
   <div class="servo-info-display">
     <div class="servo-port">{{ displayPort }}</div>
     <div class="servo-details" v-if="info">
-      <span>位置: {{ info.position }}</span>
-      <span>角度: {{ info.angle.toFixed(1) }}°</span>
-      <span>电压: {{ info.voltage }}V</span>
-      <span>温度: {{ info.temperature }}°C</span>
+      <span>位置: {{ info.position ?? '--' }}</span>
+      <span>角度: {{ info.angle != null ? info.angle.toFixed(1) : '--' }}°</span>
+      <span>电压: {{ info.voltage ?? '--' }}V</span>
+      <span>温度: {{ info.temperature ?? '--' }}°C</span>
     </div>
     <button 
       v-if="!info && !loading" 

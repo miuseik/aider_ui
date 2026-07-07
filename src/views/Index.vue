@@ -144,6 +144,7 @@ import { useKeyboard } from '../composables/useKeyboard'
 import KeyboardHelp from '../components/KeyboardHelp.vue'
 import RobotHardwareInfo from '../components/RobotHardwareInfo.vue'
 import { useServoStore } from '@/stores/servo'
+import { wsClient } from '@/utils/websocket'
 
 // Router
 const router = useRouter()
@@ -258,9 +259,37 @@ const checkWsConnection = async () => {
 
 // Lifecycle
 
+// WebSocket 硬件信息监听器（一次性推送，不轮询）
+let wsUnsubscribe = null
+
 onMounted(() => {
   // 初始同步一次全量状态
   syncLiveStatus()
+
+  // 监听 robot_hardware_info：Terminal 连接/断开时更新连接状态（舵机详情通过 /api/status 手动刷新获取）
+  wsUnsubscribe = wsClient.onMessage((data) => {
+    if (data.type === 'robot_hardware_info') {
+      console.log('📥 机器人连接状态变更 (通过 WebSocket):', {
+        robot_connected: data.robot_connected,
+        is_engaged: data.is_engaged,
+        left_arm: data.left_arm_connected,
+        right_arm: data.right_arm_connected,
+      })
+      // 仅更新连接状态标志，舵机数据由用户调用 /api/status 手动刷新
+      liveStatus.value = {
+        ...liveStatus.value,
+        robot_connected: !!data.robot_connected,
+        left_arm_connected: !!data.left_arm_connected,
+        right_arm_connected: !!data.right_arm_connected,
+        base_connected: !!data.base_connected,
+        lift_connected: !!data.lift_connected,
+        robotEngaged: !!data.is_engaged,
+        left_arm_angles: data.left_arm_angles || [],
+        right_arm_angles: data.right_arm_angles || [],
+        lift_height_mm: data.lift_height_mm || 0,
+      }
+    }
+  })
 
   // 如果首次加载 servos 为空且 Terminal 在线，3 秒后重试一次
   // （后台正在自动扫描舵机，延时后 /api/status 会有数据）
@@ -279,6 +308,11 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown, { capture: true })
   document.removeEventListener('keyup', handleKeyUp, { capture: true })
+  // 取消 WebSocket 硬件状态监听
+  if (wsUnsubscribe) {
+    wsUnsubscribe()
+    wsUnsubscribe = null
+  }
 })
 </script>
 
