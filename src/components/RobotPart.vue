@@ -32,6 +32,13 @@
             <button @click="$emit('ping', partName, idx + 1)" :disabled="scanning" title="Ping" class="amber">📡</button>
             <button @click="$emit('calibrate', partName, idx + 1)" :disabled="scanning" title="校准" class="purple">⚙️</button>
             <button @click="fetchServoInfo(servo.servoId)" :disabled="scanning || fetchingInfo" title="获取信息" class="teal">📋</button>
+            <button
+              v-if="!servo.isFeetech && showCalibration"
+              @click="confirmSetZero(partName, servo.key, servo.servoId)"
+              :disabled="!getServoStatus(servo.servoId).online || calibrating"
+              title="将当前位置设置为电机的零位参考点"
+              class="green"
+            >0️⃣</button>
           </div>
           <!-- Feetech 舵机：零位偏移量 + 记录按钮 -->
           <div v-if="servo.isFeetech && showCalibration" class="offset-row">
@@ -71,6 +78,7 @@
 
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { eventBus } from '@/utils/eventBus.js'
 import * as api from '@/api'
 
@@ -89,6 +97,17 @@ const emit = defineEmits(['claim', 'ping', 'calibrate', 'update-angle', 'recordO
 
 // 注入 foundServos
 const foundServos = inject('foundServos', { value: [] })
+
+// 标零：带确认
+const confirmSetZero = (partName, key, servoId) => {
+  ElMessageBox.confirm(
+    '确认将当前位置设置为电机的零位参考点？',
+    '标零确认',
+    { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+  ).then(() => {
+    emit('setZero', partName, key, servoId)
+  }).catch(() => {})
+}
 
 // 用户手动拖动的角度（仅记录用户操作后的值）
 const userAngleMap = ref(new Map())
@@ -346,6 +365,7 @@ function fmtOffset(val) {
 .btns-row button.amber { background: #f59e0b; }
 .btns-row button.purple { background: #8b5cf6; }
 .btns-row button.teal { background: #0d9488; }
+.btns-row button.green { background: #22c55e; }
 .btns-row button:disabled { opacity: .35; cursor: not-allowed; }
 .btns-row button:not(:disabled):hover { transform: scale(1.15); }
 

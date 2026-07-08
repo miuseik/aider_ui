@@ -190,6 +190,7 @@
       @calibrate="calibrateServoByPart"
       @update-angle="handleUpdateAngle"
       @batch-calibrate="handleBatchCalibrate"
+      @batch-set-zero="handleBatchSetZero"
       @record-offset="handleRecordOffset"
       @reset-all="handleResetAllOffsets"
       @set-zero="handleSetZero"
@@ -615,10 +616,48 @@ async function handleBatchCalibrate() {
   }
 }
 
+/** 批量标零：将所有非 Feetech 电机当前位置设为机械零位（写入 Flash） */
+async function handleBatchSetZero() {
+  try {
+    await ElMessageBox.confirm(
+      '确定要批量设置所有电机零位吗？\n\n'
+      + '此操作将当前物理姿态记录为机械零位并写入电机 Flash。\n'
+      + '请确保机械臂已经摆到期望的零位姿态！\n\n'
+      + '断电后重新上电位置即正确，此操作只需执行一次。',
+      '批量标零',
+      { confirmButtonText: '确定标零', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  calibrating.value = true
+  lastCalibrationResult.value = ''
+  try {
+    // 硬件标零只在 CAN 总线上有意义，“all”或串口路径均回退为 can0
+    const zeroPort = (port.value === 'all' || !port.value) ? 'can0' : port.value
+    const res = await api.batchSetServoZero(zeroPort)
+    if (res.code === 200 || res.code === 503) {
+      await new Promise(r => setTimeout(r, 3000))
+      await servoStore.fetchServoIdConfig()
+      lastCalibrationResult.value = '批量标零完成，所有电机 Flash 已更新'
+      ElMessage.success('批量标零完成，断电重启后零点生效')
+    } else {
+      ElMessage.error('批量标零触发失败')
+    }
+  } catch (e) {
+    console.error('批量标零失败:', e)
+    ElMessage.error(`标零失败: ${e.message}`)
+  } finally {
+    calibrating.value = false
+  }
+}
+
 /** 单舵机记录零位 */
 async function handleRecordOffset({ partName, jointKey, servoId }) {
   try {
-    const res = await api.calibrateSingleOffset(servoId, port.value)
+    const actualPort = getServoPort(servoId)
+    const res = await api.calibrateSingleOffset(servoId, actualPort)
     if (res.code === 200 || res.code === 503) {
       await new Promise(r => setTimeout(r, 2000))
       await servoStore.fetchServoIdConfig()
@@ -635,7 +674,8 @@ async function handleRecordOffset({ partName, jointKey, servoId }) {
 /** 电机设置零位 */
 async function handleSetZero({ partName, jointKey, servoId }) {
   try {
-    const res = await api.setServoZero(servoId, port.value)
+    const actualPort = getServoPort(servoId)
+    const res = await api.setServoZero(servoId, actualPort)
     if (res.code === 200 || res.code === 503) {
       await new Promise(r => setTimeout(r, 2000))
       await servoStore.fetchServoIdConfig()
