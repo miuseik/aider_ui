@@ -1,10 +1,53 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
+import { wsClient } from '@/utils/websocket'
 
 export function useRobot() {
   const isRobotEngaged = ref(false)
   const showWarning = ref(false)
   const warningTimeout = ref(null)
+
+  // ---- 姿态相关状态 ----
+  const poseList = ref({})         // { poseName: { left: [...], right: [...] } }
+  const currentPoseName = ref('')  // 当前选中的姿态名
+  const poseLoading = ref(false)
+
+  /**
+   * 通过 WebSocket 向 Terminal 请求可用姿态列表
+   */
+  function fetchPoses() {
+    if (!wsClient.isConnected) {
+      console.warn('⚠️ WebSocket 未连接，无法获取姿态列表')
+      return
+    }
+    poseLoading.value = true
+    wsClient.send({
+      type: 'api_command',
+      action: 'list_poses',
+    })
+  }
+
+  /**
+   * 通过 WebSocket 向 Terminal 发送 goto_pose 指令
+   * @param {string} poseName - 姿态名（safe / default / zero / ...）
+   * @param {string} arm - 'left' | 'right' | 'both'
+   */
+  function gotoPose(poseName, arm = 'both') {
+    if (!wsClient.isConnected) {
+      ElMessage.warning('WebSocket 未连接，无法切换姿态')
+      return
+    }
+    if (!poseName) {
+      ElMessage.warning('请选择姿态')
+      return
+    }
+    wsClient.send({
+      type: 'api_command',
+      action: 'goto_pose',
+      arm: arm,
+      pose_name: poseName,
+    })
+  }
 
   async function toggleRobotEngagement() {
     const action = isRobotEngaged.value ? 'disconnect' : 'connect'
@@ -20,6 +63,13 @@ export function useRobot() {
       if (data.success) {
         isRobotEngaged.value = !isRobotEngaged.value
         showWarning.value = false
+        if (action === 'disconnect') {
+          // 断开时清除姿态
+          poseList.value = {}
+          currentPoseName.value = ''
+        }
+        // 连接成功后，robot_hardware_info 会通过 WebSocket 推送，
+        // 前端收到 robot_connected=true 后自动调用 fetchPoses()
       } else {
         ElMessage.error(action === 'connect' ? '连接机器人失败' : '断开机器人失败')
       }
@@ -68,6 +118,12 @@ export function useRobot() {
     showWarning,
     toggleRobotEngagement,
     showConnectionWarning,
-    updateStatus
+    updateStatus,
+    // 姿态相关
+    poseList,
+    currentPoseName,
+    poseLoading,
+    fetchPoses,
+    gotoPose,
   }
 }

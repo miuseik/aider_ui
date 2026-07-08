@@ -117,6 +117,27 @@ yi<template>
           >
             {{ isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接' }}
           </el-button>
+          <!-- 姿态选择器（连接后才显示） -->
+          <div v-if="isRobotEngaged && Object.keys(poseList).length > 0" class="pose-selector">
+            <el-select
+              v-model="currentPoseName"
+              placeholder="选择姿态"
+              size="default"
+              :loading="poseLoading"
+              @change="onPoseSelected"
+              class="pose-select"
+            >
+              <el-option
+                v-for="(pose, name) in poseList"
+                :key="name"
+                :label="name"
+                :value="name"
+              />
+            </el-select>
+          </div>
+          <div v-if="isRobotEngaged && poseLoading" style="display: inline-flex; align-items: center; margin-left: 8px;">
+            <el-tag type="info" size="small">加载姿态中…</el-tag>
+          </div>
         </div>
       </div>
       <!-- Main Content - Single Screen Layout -->
@@ -136,7 +157,7 @@ yi<template>
 <script setup>
 import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElConfigProvider, ElMessageBox } from 'element-plus'
+import { ElConfigProvider, ElMessageBox, ElMessage } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useConfig } from '../composables/useConfig'
 import { useRobot } from '../composables/useRobot'
@@ -151,7 +172,11 @@ const router = useRouter()
 
 // Composables
 const { vrServerUrl } = useConfig()
-const { isRobotEngaged, showWarning, toggleRobotEngagement, showConnectionWarning, updateStatus } = useRobot()
+const {
+  isRobotEngaged, showWarning,
+  toggleRobotEngagement, showConnectionWarning, updateStatus,
+  poseList, currentPoseName, poseLoading, fetchPoses, gotoPose,
+} = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
 
 // State
@@ -218,10 +243,16 @@ const syncLiveStatus = async () => {
       // 同步 foundServos 给 RobotPart inject 使用
       foundServos.value = data.servos || []
     }
-    console.log('✅ 获取到即时状态数据:', liveStatus.value)
   } finally {
     refreshing.value = false
   }
+}
+
+// 姿态选择回调
+function onPoseSelected(poseName) {
+  if (!poseName) return
+  console.log('🎯 用户选择姿态:', poseName)
+  gotoPose(poseName, 'both')
 }
 
 // VR mode toggle
@@ -264,17 +295,16 @@ let wsUnsubscribe = null
 
 onMounted(() => {
   // 初始同步一次全量状态
-  syncLiveStatus()
+  syncLiveStatus().then(() => {
+    // 如果机器人已连接，自动获取可用姿态列表
+    if (isRobotEngaged.value) {
+      fetchPoses()
+    }
+  })
 
   // 监听 robot_hardware_info：Terminal 连接/断开时更新连接状态（舵机详情通过 /api/status 手动刷新获取）
   wsUnsubscribe = wsClient.onMessage((data) => {
     if (data.type === 'robot_hardware_info') {
-      console.log('📥 机器人连接状态变更 (通过 WebSocket):', {
-        robot_connected: data.robot_connected,
-        is_engaged: data.is_engaged,
-        left_arm: data.left_arm_connected,
-        right_arm: data.right_arm_connected,
-      })
       // 仅更新连接状态标志，舵机数据由用户调用 /api/status 手动刷新
       liveStatus.value = {
         ...liveStatus.value,
@@ -287,6 +317,24 @@ onMounted(() => {
         left_arm_angles: data.left_arm_angles || [],
         right_arm_angles: data.right_arm_angles || [],
         lift_height_mm: data.lift_height_mm || 0,
+      }
+      // 机器人连接成功后自动获取可用姿态列表
+      if (data.robot_connected) {
+        fetchPoses()
+      }
+    }
+    // 姿态列表响应
+    if (data.type === 'list_poses_response') {
+      poseList.value = data.poses || {}
+      poseLoading.value = false
+      console.log('📋 获取到姿态列表:', Object.keys(poseList.value))
+    }
+    // goto_pose 响应
+    if (data.type === 'goto_pose_response') {
+      if (data.success) {
+        ElMessage.success(data.message || '姿态切换成功')
+      } else {
+        ElMessage.error(data.message || '姿态切换失败')
       }
     }
   })
@@ -381,5 +429,15 @@ onUnmounted(() => {
   input[type="checkbox"] {
     cursor: pointer;
   }
+}
+
+.pose-selector {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 12px;
+}
+
+.pose-select {
+  width: 160px;
 }
 </style>
