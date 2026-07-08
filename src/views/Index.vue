@@ -113,9 +113,11 @@ yi<template>
           <!-- 连接机器人按钮 -->
           <el-button
             :type="isRobotEngaged ? 'danger' : 'primary'"
+            :loading="connecting"
+            :disabled="connecting"
             @click="toggleRobotEngagement"
           >
-            {{ isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接' }}
+            {{ connecting ? (isRobotEngaged ? '断开中…' : '连接中…') : (isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接') }}
           </el-button>
           <!-- 姿态选择器（连接后才显示） -->
           <div v-if="isRobotEngaged && Object.keys(poseList).length > 0" class="pose-selector">
@@ -173,7 +175,7 @@ const router = useRouter()
 // Composables
 const { vrServerUrl } = useConfig()
 const {
-  isRobotEngaged, showWarning,
+  isRobotEngaged, showWarning, connecting,
   toggleRobotEngagement, showConnectionWarning, updateStatus,
   poseList, currentPoseName, poseLoading, fetchPoses, gotoPose,
 } = useRobot()
@@ -251,7 +253,6 @@ const syncLiveStatus = async () => {
 // 姿态选择回调
 function onPoseSelected(poseName) {
   if (!poseName) return
-  console.log('🎯 用户选择姿态:', poseName)
   gotoPose(poseName, 'both')
 }
 
@@ -294,7 +295,12 @@ const checkWsConnection = async () => {
 let wsUnsubscribe = null
 
 onMounted(() => {
-  // 初始同步一次全量状态
+  // 首先用 store 已有的状态快速初始化按钮，避免闪烁
+  if (isRobotEngaged.value) {
+    liveStatus.value.robotEngaged = true
+  }
+
+  // 初始同步一次全量状态（会用服务端真实状态覆盖 store）
   syncLiveStatus().then(() => {
     // 如果机器人已连接，自动获取可用姿态列表
     if (isRobotEngaged.value) {
@@ -302,10 +308,10 @@ onMounted(() => {
     }
   })
 
-  // 监听 robot_hardware_info：Terminal 连接/断开时更新连接状态（舵机详情通过 /api/status 手动刷新获取）
+  // 监听 robot_hardware_info：实时更新页面上的硬件连接状态指示器
+  // 注意：机器人连接/断开 + 姿态同步已由 App.vue 全局监听处理
   wsUnsubscribe = wsClient.onMessage((data) => {
     if (data.type === 'robot_hardware_info') {
-      // 仅更新连接状态标志，舵机数据由用户调用 /api/status 手动刷新
       liveStatus.value = {
         ...liveStatus.value,
         robot_connected: !!data.robot_connected,
@@ -318,24 +324,6 @@ onMounted(() => {
         right_arm_angles: data.right_arm_angles || [],
         lift_height_mm: data.lift_height_mm || 0,
       }
-      // 机器人连接成功后自动获取可用姿态列表
-      if (data.robot_connected) {
-        fetchPoses()
-      }
-    }
-    // 姿态列表响应
-    if (data.type === 'list_poses_response') {
-      poseList.value = data.poses || {}
-      poseLoading.value = false
-      console.log('📋 获取到姿态列表:', Object.keys(poseList.value))
-    }
-    // goto_pose 响应
-    if (data.type === 'goto_pose_response') {
-      if (data.success) {
-        ElMessage.success(data.message || '姿态切换成功')
-      } else {
-        ElMessage.error(data.message || '姿态切换失败')
-      }
     }
   })
 
@@ -343,7 +331,6 @@ onMounted(() => {
   // （后台正在自动扫描舵机，延时后 /api/status 会有数据）
   setTimeout(() => {
     if (liveStatus.value.terminal_connected && liveStatus.value.servos.length === 0) {
-      console.log('🔄 后台扫描中，重新获取舵机列表...')
       syncLiveStatus()
     }
   }, 3000)

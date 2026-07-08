@@ -296,11 +296,24 @@ const getServoByPart = (part, index) => {
 
 provide('foundServos', foundServos)
 
+// ServoInfoDisplay 获取信息后同步 foundServos 的回调
+const onServoInfoFetched = (data) => {
+  const servo = foundServos.value.find(s => s.id === data.servoId)
+  if (servo) {
+    if (data.angle !== undefined) servo.angle = data.angle
+    if (data.online !== undefined) servo.online = !!data.online
+    // 通知 RobotPart 清除该舵机的用户角度缓存，让实时数据生效
+    eventBus.emit('robot-hw-clear-angle', data.servoId)
+  }
+}
+
 onMounted(async () => {
   // 获取可用串口列表并同步到 Pinia
   await fetchAvailablePorts()
   // 获取机器人配置（Pinia 缓存，首次调用才请求）
   await servoStore.fetchServoIdConfig()
+  // 监听 get_info 结果，实时同步到 foundServos → RobotHardwareInfo 视图
+  eventBus.on('servo-info-fetched', onServoInfoFetched)
 })
 
 // 认领舵机 - 扫描并更新配置
@@ -390,7 +403,6 @@ async function readAllServoPositions() {
 // 保存舵机配置到 server
 const saveServoConfig = async () => {
   try {
-    console.log('保存配置:', JSON.stringify(robotConfig.value, null, 2))
     const response = await api.putServoIds({
       config: robotConfig.value
     })
@@ -709,10 +721,11 @@ const handleUpdateAngle = async ({ servoId, angle, port }) => {
   
   const success = await setServoAngle(servoId, angle, portToUse)
   
-  // ✅ 如果设置成功，触发刷新事件
+  // ✅ 如果设置成功，等1秒再触发 get_info（等电机到位后读数）
   if (success) {
-    console.log('[ServoManager] 触发刷新事件:', `servo-info-refresh-${servoId}`)
-    eventBus.emit(`servo-info-refresh-${servoId}`)
+    setTimeout(() => {
+      eventBus.emit(`servo-info-refresh-${servoId}`)
+    }, 1000)
   }
 }
 
@@ -766,7 +779,6 @@ const resetAllServos = async () => {
       if (success) {
         successCount++
         // ✅ 触发刷新事件
-        console.log('[ServoManager] 触发刷新事件:', `servo-info-refresh-${servo.id}`)
         eventBus.emit(`servo-info-refresh-${servo.id}`)
       } else {
         failCount++
@@ -781,7 +793,7 @@ const resetAllServos = async () => {
 }
 
 onUnmounted(() => {
-  // 无需清理
+  eventBus.off('servo-info-fetched', onServoInfoFetched)
 })
 
 // 扫描舵机
@@ -844,10 +856,11 @@ const updateServoAngle = async(servo) => {
   // 设置新定时器
   const success = await setServoAngle(servo.id, servo.angle, servo.port)
   
-  // ✅ 如果设置成功，触发刷新事件
+  // ✅ 如果设置成功，等1秒再触发 get_info（等电机到位后读数）
   if (success) {
-    console.log('[ServoManager] 触发刷新事件:', `servo-info-refresh-${servo.id}`)
-    eventBus.emit(`servo-info-refresh-${servo.id}`)
+    setTimeout(() => {
+      eventBus.emit(`servo-info-refresh-${servo.id}`)
+    }, 1000)
   }
 }
 

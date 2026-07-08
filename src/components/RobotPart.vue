@@ -31,6 +31,7 @@
             <button @click="$emit('claim', partName, idx + 1)" :disabled="scanning" title="认领">🔍</button>
             <button @click="$emit('ping', partName, idx + 1)" :disabled="scanning" title="Ping" class="amber">📡</button>
             <button @click="$emit('calibrate', partName, idx + 1)" :disabled="scanning" title="校准" class="purple">⚙️</button>
+            <button @click="fetchServoInfo(servo.servoId)" :disabled="scanning || fetchingInfo" title="获取信息" class="teal">📋</button>
           </div>
           <!-- Feetech 舵机：零位偏移量 + 记录按钮 -->
           <div v-if="servo.isFeetech && showCalibration" class="offset-row">
@@ -69,7 +70,9 @@
 </template>
 
 <script setup>
-import { ref, computed, inject } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
+import { eventBus } from '@/utils/eventBus.js'
+import * as api from '@/api'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -129,6 +132,29 @@ const confirmAngle = (servoId) => {
   updateAngle(servoId)
 }
 
+// 📋 获取电机信息
+const fetchingInfo = ref(false)
+const fetchServoInfo = async (servoId) => {
+  const found = foundServos.value.find(s => s.id === servoId)
+  if (!found) return
+  const port = found.port || 'can0'
+  fetchingInfo.value = true
+  try {
+    const response = await api.getServoInfo(servoId, port)
+    if (response.code === 200 && response.data) {
+      eventBus.emit('servo-info-fetched', {
+        servoId,
+        angle: response.data.angle,
+        online: response.data.online,
+      })
+    }
+  } catch (err) {
+    console.error('[RobotPart] get_info failed:', err)
+  } finally {
+    fetchingInfo.value = false
+  }
+}
+
 // 更新角度（防抖）
 let updateTimer = null
 const updateAngle = (servoId) => {
@@ -143,6 +169,18 @@ const updateAngle = (servoId) => {
     })
   }, 100)
 }
+
+// 监听 get_info 返回：清除用户手动值缓存，让实时数据 / foundServos 生效
+const onHwClearAngle = (servoId) => {
+  userAngleMap.value.delete(servoId)
+  servoInputMap.value.delete(servoId)
+}
+onMounted(() => {
+  eventBus.on('robot-hw-clear-angle', onHwClearAngle)
+})
+onUnmounted(() => {
+  eventBus.off('robot-hw-clear-angle', onHwClearAngle)
+})
 
 const displayServos = computed(() => {
   const entries = []
@@ -307,6 +345,7 @@ function fmtOffset(val) {
 }
 .btns-row button.amber { background: #f59e0b; }
 .btns-row button.purple { background: #8b5cf6; }
+.btns-row button.teal { background: #0d9488; }
 .btns-row button:disabled { opacity: .35; cursor: not-allowed; }
 .btns-row button:not(:disabled):hover { transform: scale(1.15); }
 

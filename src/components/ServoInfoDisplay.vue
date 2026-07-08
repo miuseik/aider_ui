@@ -54,14 +54,18 @@ const eventName = computed(() => `servo-info-refresh-${props.servoId}`)
 const fetchInfo = async () => {
   if (loading.value) return
   
-  console.log('[ServoInfoDisplay] 开始获取舵机信息，ID:', props.servoId)
   loading.value = true
   try {
     const response = await api.getServoInfo(props.servoId, props.port)
     
     if (response.code === 200 && response.data) {
-      console.log('[ServoInfoDisplay] 获取成功:', response.data)
       emit('update:info', response.data)
+      // 同步更新 foundServos，使 RobotHardwareInfo 视图实时刷新
+      eventBus.emit('servo-info-fetched', {
+        servoId: props.servoId,
+        angle: response.data.angle,
+        online: response.data.online,
+      })
     }
   } catch (error) {
     console.error('[ServoInfoDisplay] 获取舵机信息失败:', error)
@@ -72,13 +76,11 @@ const fetchInfo = async () => {
 
 // ✅ 组件挂载时监听事件
 onMounted(() => {
-  console.log('[ServoInfoDisplay] 组件挂载，开始监听事件:', eventName.value)
   eventBus.on(eventName.value, fetchInfo)
 })
 
 // ✅ 组件卸载时取消监听
 onUnmounted(() => {
-  console.log('[ServoInfoDisplay] 组件卸载，取消监听事件:', eventName.value)
   eventBus.off(eventName.value, fetchInfo)
 })
 
