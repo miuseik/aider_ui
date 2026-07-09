@@ -63,14 +63,14 @@ onMounted(() => {
       if (data.robot_connected !== undefined) {
         robotStore.setEngaged(!!data.robot_connected)
       }
-      // 机器人连接成功后自动获取可用姿态列表
+      // 连接成功后自动获取可用姿态列表（仿真模式也需加载）
       if (data.robot_connected) {
         robotStore.setPoseLoading(true)
         wsClient.send({ type: 'api_command', action: 'list_poses' })
       }
-      // 机器人断开后清除姿态缓存
+      // 断开后不清理 poseList，保持姿态选择器可用（仿真模式）
       if (!data.robot_connected) {
-        robotStore.resetOnDisconnect()
+        robotStore.setEngaged(false)
       }
     }
     // 姿态列表响应
@@ -91,7 +91,7 @@ onMounted(() => {
   // WebSocket 重连后，如果之前机器人已连接，延迟重试姿态同步
   // （避免重连瞬间 Terminal 还没 ready）
   poseRetryTimer = setTimeout(() => {
-    if (wsClient.isConnected && robotStore.isRobotEngaged && Object.keys(robotStore.poseList).length === 0) {
+    if (wsClient.isConnected && Object.keys(robotStore.poseList).length === 0) {
       robotStore.setPoseLoading(true)
       wsClient.send({ type: 'api_command', action: 'list_poses' })
     }

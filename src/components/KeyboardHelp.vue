@@ -1,10 +1,30 @@
 <template>
   <div class="keyboard-help" :class="{ active: isKeyboardEnabled }">
-    <!-- Collapsed state: just the enable button -->
+    <!-- Collapsed state: just the enable button + 姿态选择 -->
     <div class="keyboard-help-collapsed" v-show="!isKeyboardEnabled">
-      <div class="control-toggle" @click="$emit('toggle')">
-        <span>🎮</span>
-        <span>{{ isKeyboardEnabled ? '禁用键盘控制' : '启用键盘控制' }}</span>
+      <div class="collapsed-row">
+        <div class="control-toggle" @click="$emit('toggle')">
+          <span>🎮</span>
+          <span>{{ isKeyboardEnabled ? '禁用键盘控制' : '启用键盘控制' }}</span>
+        </div>
+        <div v-if="showPoseSelector" class="pose-selector-inline">
+          <span class="pose-label">🎯 姿态</span>
+          <el-select
+            :model-value="currentPoseName"
+            placeholder="选择姿态"
+            size="default"
+            :loading="poseLoading"
+            @change="$emit('pose-change', $event)"
+            class="pose-select"
+          >
+            <el-option
+              v-for="(pose, name) in poseList"
+              :key="name"
+              :label="name"
+              :value="name"
+            />
+          </el-select>
+        </div>
       </div>
     </div>
     
@@ -14,6 +34,24 @@
         <div class="control-toggle active" @click="$emit('toggle')">
           <span>🎮</span>
           <span>禁用键盘控制</span>
+        </div>
+        <div v-if="showPoseSelector" class="pose-selector-inline">
+          <span class="pose-label">🎯 姿态</span>
+          <el-select
+            :model-value="currentPoseName"
+            placeholder="选择姿态"
+            size="default"
+            :loading="poseLoading"
+            @change="$emit('pose-change', $event)"
+            class="pose-select"
+          >
+            <el-option
+              v-for="(pose, name) in poseList"
+              :key="name"
+              :label="name"
+              :value="name"
+            />
+          </el-select>
         </div>
         <div class="help-title">
           <span>⌨️</span>
@@ -118,10 +156,26 @@ defineProps({
   isKeyboardEnabled: {
     type: Boolean,
     default: false
+  },
+  poseList: {
+    type: Object,
+    default: () => ({})
+  },
+  currentPoseName: {
+    type: String,
+    default: ''
+  },
+  poseLoading: {
+    type: Boolean,
+    default: false
+  },
+  showPoseSelector: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['toggle'])
+defineEmits(['toggle', 'pose-change'])
 </script>
 
 <style scoped>
@@ -133,5 +187,28 @@ defineEmits(['toggle'])
 .help-column {
   flex: 1;
   min-width: 0;
+}
+
+.pose-selector-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pose-label {
+  color: rgba(100, 200, 255, 0.85);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pose-select {
+  width: 180px;
+}
+
+.collapsed-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 </style>

@@ -100,7 +100,7 @@ yi<template>
           </div>
         </div>
 <!--        刷新状态-->
-        <div >
+        <div>
           <!-- 刷新状态按钮 -->
           <el-button
             type="info"
@@ -119,33 +119,17 @@ yi<template>
           >
             {{ connecting ? (isRobotEngaged ? '断开中…' : '连接中…') : (isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接') }}
           </el-button>
-          <!-- 姿态选择器（连接后才显示） -->
-          <div v-if="showPoseSelector" class="pose-selector">
-            <el-select
-              v-model="currentPoseName"
-              placeholder="选择姿态"
-              size="default"
-              :loading="poseLoading"
-              @change="onPoseSelected"
-              class="pose-select"
-            >
-              <el-option
-                v-for="(pose, name) in poseList"
-                :key="name"
-                :label="name"
-                :value="name"
-              />
-            </el-select>
-          </div>
-          <div v-if="isRobotEngaged && poseLoading" style="display: inline-flex; align-items: center; margin-left: 8px;">
-            <el-tag type="info" size="small">加载姿态中…</el-tag>
-          </div>
         </div>
       </div>
       <!-- Main Content - Single Screen Layout -->
       <KeyboardHelp
         :is-keyboard-enabled="isKeyboardEnabled"
+        :pose-list="poseList"
+        :current-pose-name="currentPoseName"
+        :pose-loading="poseLoading"
+        :show-pose-selector="showPoseSelector"
         @toggle="toggleKeyboardControl"
+        @pose-change="onPoseSelected"
       />
 
       <RobotHardwareInfo
@@ -181,8 +165,8 @@ const {
 } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
 
-// 姿态选择器显隐：computed 确保 Vue 能追踪 isRobotEngaged + poseList 的响应式变化
-const showPoseSelector = computed(() => isRobotEngaged.value && Object.keys(poseList.value).length > 0)
+// 姿态选择器显隐：WebSocket 连接且已加载姿态列表时显示
+const showPoseSelector = computed(() => Object.keys(poseList.value).length > 0)
 
 // State
 const refreshing = ref(false)
@@ -305,10 +289,8 @@ onMounted(() => {
 
   // 初始同步一次全量状态（会用服务端真实状态覆盖 store）
   syncLiveStatus().then(() => {
-    // 如果机器人已连接，自动获取可用姿态列表
-    if (isRobotEngaged.value) {
-      fetchPoses()
-    }
+    // 始终获取可用姿态列表（含仿真模式，不依赖真机连接状态）
+    fetchPoses()
   })
 
   // 监听 robot_hardware_info：实时更新页面上的硬件连接状态指示器
@@ -419,15 +401,5 @@ onUnmounted(() => {
   input[type="checkbox"] {
     cursor: pointer;
   }
-}
-
-.pose-selector {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 12px;
-}
-
-.pose-select {
-  width: 160px;
 }
 </style>

@@ -215,7 +215,7 @@ const servoStore = useServoStore()
 const API_BASE = ''
 
 // 连接设置
-const port = ref('/dev/ttyACM0')
+const port = ref('all')
 const servoType = ref('st3215')
 const baudrate = ref(1000000)
 
@@ -1034,15 +1034,7 @@ const fetchAvailablePorts = async () => {
       ports.push('can0')
     }
     servoStore.setAvailablePorts(ports)
-    // 自动选端口：根据当前电机类型智能匹配
-    if (ports.length > 0 && (port.value === '/dev/ttyACM0' || port.value === 'can0')) {
-      if (servoType.value === 'robstride') {
-        port.value = ports.includes('can0') ? 'can0' : ports[0]
-      } else {
-        const serialPort = ports.find(p => p.startsWith('/dev/tty'))
-        port.value = serialPort || ports[0]
-      }
-    }
+    // 自动选端口：只有当前是 'all' 默认值不变，保持扫描所有串口
   } catch (error) {
     console.error('获取串口列表失败:', error)
     const defaultPorts = ['/dev/ttyACM0', 'can0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
