@@ -44,10 +44,24 @@ onMounted(() => {
   // === 全局机器人状态监听（跨页面持久化） ===
   const robotStore = useRobotStore()
   globalWsUnsubscribe = wsClient.onMessage((data) => {
+    // 连接/断开的明确响应（终端扫描硬件后回执，驱动按钮真实状态）
+    if (data.type === 'robot_connect_response') {
+      if (data.success) {
+        ElMessage.success(data.message || '机器人连接成功')
+        robotStore.setEngaged(true)
+        robotStore.setConnecting(false)  // 结束 useRobot 轮询中的 connecting 状态
+      } else {
+        ElMessage.error(data.message || '机器人连接失败')
+        robotStore.setEngaged(false)
+        robotStore.setConnecting(false)
+      }
+    }
     // 机器人硬件信息推送 → 更新连接状态
     if (data.type === 'robot_hardware_info') {
-      if (data.is_engaged !== undefined) {
-        robotStore.setEngaged(!!data.is_engaged)
+      // 用 robot_connected（硬件已扫描）而非 is_engaged（电机使能）判断连接状态
+      // 连接后先扫硬件再选择姿态使能，避免 is_engaged=false 覆盖乐观更新
+      if (data.robot_connected !== undefined) {
+        robotStore.setEngaged(!!data.robot_connected)
       }
       // 机器人连接成功后自动获取可用姿态列表
       if (data.robot_connected) {
@@ -55,7 +69,7 @@ onMounted(() => {
         wsClient.send({ type: 'api_command', action: 'list_poses' })
       }
       // 机器人断开后清除姿态缓存
-      if (!data.robot_connected && data.is_engaged === false) {
+      if (!data.robot_connected) {
         robotStore.resetOnDisconnect()
       }
     }

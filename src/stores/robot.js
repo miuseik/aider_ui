@@ -8,6 +8,7 @@ import { ref } from 'vue'
 export const useRobotStore = defineStore('robot', () => {
   // ---- 核心状态 ----
   const isRobotEngaged = ref(false)
+  const connecting = ref(false)    // 连接/断开操作进行中
 
   // ---- 姿态相关 ----
   const poseList = ref({})         // { poseName: { left: [...], right: [...] } }
@@ -17,6 +18,10 @@ export const useRobotStore = defineStore('robot', () => {
   // ---- 操作 ----
   function setEngaged(val) {
     isRobotEngaged.value = val
+  }
+
+  function setConnecting(val) {
+    connecting.value = val
   }
 
   function setPoseList(poses) {
@@ -33,16 +38,19 @@ export const useRobotStore = defineStore('robot', () => {
 
   /** 断开时清除姿态缓存 */
   function resetOnDisconnect() {
+    isRobotEngaged.value = false
     poseList.value = {}
     currentPoseName.value = ''
   }
 
   return {
     isRobotEngaged,
+    connecting,
     poseList,
     currentPoseName,
     poseLoading,
     setEngaged,
+    setConnecting,
     setPoseList,
     setPoseLoading,
     setCurrentPoseName,

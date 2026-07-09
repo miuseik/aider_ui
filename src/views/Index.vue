@@ -120,7 +120,7 @@ yi<template>
             {{ connecting ? (isRobotEngaged ? '断开中…' : '连接中…') : (isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接') }}
           </el-button>
           <!-- 姿态选择器（连接后才显示） -->
-          <div v-if="isRobotEngaged && Object.keys(poseList).length > 0" class="pose-selector">
+          <div v-if="showPoseSelector" class="pose-selector">
             <el-select
               v-model="currentPoseName"
               placeholder="选择姿态"
@@ -180,6 +180,9 @@ const {
   poseList, currentPoseName, poseLoading, fetchPoses, gotoPose,
 } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
+
+// 姿态选择器显隐：computed 确保 Vue 能追踪 isRobotEngaged + poseList 的响应式变化
+const showPoseSelector = computed(() => isRobotEngaged.value && Object.keys(poseList.value).length > 0)
 
 // State
 const refreshing = ref(false)
@@ -319,7 +322,7 @@ onMounted(() => {
         right_arm_connected: !!data.right_arm_connected,
         base_connected: !!data.base_connected,
         lift_connected: !!data.lift_connected,
-        robotEngaged: !!data.is_engaged,
+        robotEngaged: !!data.robot_connected,
         left_arm_angles: data.left_arm_angles || [],
         right_arm_angles: data.right_arm_angles || [],
         lift_height_mm: data.lift_height_mm || 0,
