@@ -12,6 +12,8 @@ export function useRobot() {
   const { isRobotEngaged, connecting, poseList, currentPoseName, poseLoading } = storeToRefs(store)
   const showWarning = ref(false)
   const warningTimeout = ref(null)
+  const calibrating = ref(false)  // 标零中的 loading 状态
+  const recoveringCan = ref(false)  // CAN 恢复中的 loading 状态
 
   /**
    * 通过 WebSocket 向 Terminal 请求可用姿态列表
@@ -171,13 +173,72 @@ export function useRobot() {
     }
   }
 
+  /**
+   * 重新标零掉圈电机：调用后端接口，自动移到零位 + 标零
+   */
+  async function recalibrateMultiturn() {
+    if (calibrating.value) return
+    calibrating.value = true
+    try {
+      const response = await fetch('/api/robot/recalibrate', {
+        method: 'POST'
+      })
+      const json = await response.json()
+      const data = json.data || {}
+      if (data.success) {
+        // 标零完成后提示用户重新连接
+        ElMessage.success('标零完成！请重新连接机器人')
+      } else {
+        ElMessage.error(data.message || json.message || '标零失败')
+      }
+      return data
+    } catch (error) {
+      console.error('重新标零失败:', error)
+      ElMessage.error('与服务器通信错误')
+      return { success: false }
+    } finally {
+      calibrating.value = false
+    }
+  }
+
+  /**
+   * CAN 总线恢复：重置卡死的 USB CAN 适配器
+   */
+  async function canRecover() {
+    if (recoveringCan.value) return
+    recoveringCan.value = true
+    try {
+      const response = await fetch('/api/robot/can_recover', { method: 'POST' })
+      const json = await response.json()
+      const data = json.data || {}
+      if (data.success) {
+        ElMessage.success('CAN 总线恢复成功，请重新连接机器人')
+      } else {
+        const result = data.result || {}
+        const failed = Object.entries(result).filter(([, ok]) => !ok).map(([k]) => k).join(', ')
+        ElMessage.warning(failed ? `CAN 恢复部分失败: ${failed}` : (json.message || 'CAN 恢复失败'))
+      }
+      return data
+    } catch (error) {
+      console.error('CAN 恢复失败:', error)
+      ElMessage.error('与服务器通信错误')
+      return { success: false }
+    } finally {
+      recoveringCan.value = false
+    }
+  }
+
   return {
     isRobotEngaged,
     showWarning,
     connecting,
+    calibrating,
+    recoveringCan,
     toggleRobotEngagement,
     showConnectionWarning,
     updateStatus,
+    recalibrateMultiturn,
+    canRecover,
     poseList,
     currentPoseName,
     poseLoading,
