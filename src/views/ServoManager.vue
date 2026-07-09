@@ -441,22 +441,23 @@ const claimSingleServo = async (part, index) => {
     return
   }
   
-  const partMap = {
-    'left_arm': robotConfig.value.left_arm,
-    'right_arm': robotConfig.value.right_arm,
-    'base': robotConfig.value.base,
-    'neck': robotConfig.value.neck,
-    'lift_axis': robotConfig.value.lift_axis
-  }
-  
-  const partConfig = partMap[part]
-  if (!partConfig) return
-  
-  const keys = Object.keys(partConfig)
-  if (index > keys.length) return
-  
-  const key = keys[index - 1]
-  const oldId = partConfig[key]
+    const partMap = {
+      'left_arm': robotConfig.value.left_arm,
+      'right_arm': robotConfig.value.right_arm,
+      'base': robotConfig.value.base,
+      'neck': robotConfig.value.neck,
+      'lift_axis': robotConfig.value.lift_axis,
+      'waist': robotConfig.value.waist,
+    }
+    
+    const partConfig = partMap[part]
+    if (!partConfig) return
+    
+    const keys = Object.keys(partConfig)
+    if (index > keys.length) return
+    
+    const key = keys[index - 1]
+    const oldId = partConfig[key]
   
   const { value: newId } = await ElMessageBox.prompt(
     `当前 ID: ${oldId || '未设置'}\n\n请输入新的舵机 ID:`,
@@ -504,26 +505,27 @@ const pingServoByPart = async (part, index) => {
     return
   }
   
-  const partMap = {
-    'left_arm': robotConfig.value.left_arm,
-    'right_arm': robotConfig.value.right_arm,
-    'base': robotConfig.value.base,
-    'neck': robotConfig.value.neck,
-    'lift_axis': robotConfig.value.lift_axis
-  }
-  
-  const partConfig = partMap[part]
-  if (!partConfig) return
-  
-  const keys = Object.keys(partConfig)
-  if (index > keys.length) return
-  
-  const key = keys[index - 1]
-  const servoId = partConfig[key].id
-  
-  const port = getServoPort(servoId)
-  
-  await pingServo(servoId, port)
+    const partMap = {
+      'left_arm': robotConfig.value.left_arm,
+      'right_arm': robotConfig.value.right_arm,
+      'base': robotConfig.value.base,
+      'neck': robotConfig.value.neck,
+      'lift_axis': robotConfig.value.lift_axis,
+      'waist': robotConfig.value.waist,
+    }
+    
+    const partConfig = partMap[part]
+    if (!partConfig) return
+    
+    const keys = Object.keys(partConfig)
+    if (index > keys.length) return
+    
+    const key = keys[index - 1]
+    const servoId = partConfig[key].id
+    
+    const port = getServoPort(servoId)
+    
+    await pingServo(servoId, port)
 }
 
 // 设置舵机零点，调用 /servo/calibrate
@@ -564,26 +566,27 @@ const calibrateServoByPart = async (part, index) => {
     return
   }
   
-  const partMap = {
-    'left_arm': robotConfig.value.left_arm,
-    'right_arm': robotConfig.value.right_arm,
-    'base': robotConfig.value.base,
-    'neck': robotConfig.value.neck,
-    'lift_axis': robotConfig.value.lift_axis
-  }
-  
-  const partConfig = partMap[part]
-  if (!partConfig) return
-  
-  const keys = Object.keys(partConfig)
-  if (index > keys.length) return
-  
-  const key = keys[index - 1]
-  const servoId = partConfig[key].id
-  
-  const port = getServoPort(servoId)
-  
-  await calibrateServo(servoId, port)
+    const partMap = {
+      'left_arm': robotConfig.value.left_arm,
+      'right_arm': robotConfig.value.right_arm,
+      'base': robotConfig.value.base,
+      'neck': robotConfig.value.neck,
+      'lift_axis': robotConfig.value.lift_axis,
+      'waist': robotConfig.value.waist,
+    }
+    
+    const partConfig = partMap[part]
+    if (!partConfig) return
+    
+    const keys = Object.keys(partConfig)
+    if (index > keys.length) return
+    
+    const key = keys[index - 1]
+    const servoId = partConfig[key].id
+    
+    const port = getServoPort(servoId)
+    
+    await calibrateServo(servoId, port)
 }
 
 // ==================== 零位校准面板 ====================

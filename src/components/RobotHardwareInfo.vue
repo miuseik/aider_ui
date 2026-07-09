@@ -77,6 +77,20 @@
           @set-zero="onSetZero"
         />
         <RobotPart 
+          title="🌀 腰"
+          :servos="getPartServos(robotConfig.waist)"
+          part-name="waist"
+          :scanning="scanning"
+          :show-calibration="showCalibration"
+          :calibrating="calibrating"
+          @claim="(idx) => $emit('claim', 'waist', idx)"
+          @ping="(idx) => $emit('ping', 'waist', idx)"
+          @calibrate="(idx) => $emit('calibrate', 'waist', idx)"
+          @update-angle="$emit('update-angle', $event)"
+          @record-offset="onRecordOffset"
+          @set-zero="onSetZero"
+        />
+        <RobotPart 
           title="🦴 身体"
           :servos="getPartServos(robotConfig.lift_axis)"
           part-name="lift_axis"
