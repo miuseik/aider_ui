@@ -207,6 +207,7 @@ import { useServoStore } from '@/stores/servo'
 import { eventBus } from '@/utils/eventBus.js'
 import ServoInfoDisplay from '@/components/ServoInfoDisplay.vue'
 import RobotHardwareInfo from '@/components/RobotHardwareInfo.vue'
+import { debounce } from '@/utils/debounce.js'
 import * as api from '@/api'
 
 const servoStore = useServoStore()
@@ -756,6 +757,17 @@ const setServoSpeed = async (servoId, speed, port) => {
   }
 }
 
+// 回读防抖：连续设置同一舵机时，只在其停止操作 1 秒后回读一次（避免高频 get_info 请求）
+const refreshDebounced = {}
+const scheduleRefresh = (servoId) => {
+  if (!refreshDebounced[servoId]) {
+    refreshDebounced[servoId] = debounce(() => {
+      eventBus.emit(`servo-info-refresh-${servoId}`)
+    }, 1000)
+  }
+  refreshDebounced[servoId]()
+}
+
 // 处理角度更新（port 由 RobotPart 从 foundServos 查出来带上）
 const handleUpdateAngle = async ({ servoId, angle, port }) => {
   if (!servoId) return
@@ -764,11 +776,9 @@ const handleUpdateAngle = async ({ servoId, angle, port }) => {
   
   const success = await setServoAngle(servoId, angle, portToUse)
   
-  // ✅ 如果设置成功，等1秒再触发 get_info（等电机到位后读数）
+  // ✅ 设置成功后，防抖回读电机真实角度（停止拖动 1 秒后触发一次）
   if (success) {
-    setTimeout(() => {
-      eventBus.emit(`servo-info-refresh-${servoId}`)
-    }, 1000)
+    scheduleRefresh(servoId)
   }
 }
 
@@ -899,11 +909,9 @@ const updateServoAngle = async(servo) => {
   // 设置新定时器
   const success = await setServoAngle(servo.id, servo.angle, servo.port)
   
-  // ✅ 如果设置成功，等1秒再触发 get_info（等电机到位后读数）
+  // ✅ 设置成功后，防抖回读（停止拖动 1 秒后触发一次）
   if (success) {
-    setTimeout(() => {
-      eventBus.emit(`servo-info-refresh-${servo.id}`)
-    }, 1000)
+    scheduleRefresh(servo.id)
   }
 }
 
