@@ -16,10 +16,10 @@ const HARDCODED_ICE_SERVERS = [
   { urls: ['turns:houqicg.com:5349'], username: 'aider', credential: 'aider123456' },
 ]
 
-// 开发环境：通过 Vite /ws proxy 转发到 server
+// 开发环境：通过 Vite /ws proxy 转发到 server（复用页面 origin，访问哪个域名就连哪个域名的 ws）
 // 生产环境：直连 www.houqicg.com（复用主域名证书，避免 ws.houqicg.com 证书不匹配）
 const CLIENT_WS_URL = import.meta.env.DEV
-  ? `wss://${location.host}/ws/client/webrtc-camera`
+  ? `${location.origin}/ws/client/webrtc-camera`
   : 'wss://www.houqicg.com/ws/client/webrtc-camera'
 
 export function useWebRTC(videoRef) {

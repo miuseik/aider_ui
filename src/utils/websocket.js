@@ -17,8 +17,11 @@ class WebSocketClient {
   }
 
   getDefaultUrl() {
-    // 使用环境变量配置的 WebSocket URL
-    return import.meta.env.VITE_WS_URL || `wss://${window.location.hostname}:8442/vr/client/ui`
+    // 优先用环境变量指定的地址；否则同源连接：直接复用页面 origin（协议+域名+端口整体跟随页面），
+    // 由 vite(dev) 或 nginx(prod) 代理转发到 server 的 8442。
+    // 即访问 houqicg.com 就连 houqicg.com 的 ws，访问 localhost 就连 localhost 的 ws，访问哪个域名连哪个。
+    if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
+    return `${window.location.origin}/ws/client/ui`
   }
 
   /**
