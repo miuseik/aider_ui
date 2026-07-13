@@ -14,6 +14,8 @@ export function useRobot() {
   const warningTimeout = ref(null)
   const calibrating = ref(false)  // 标零中的 loading 状态
   const recoveringCan = ref(false)  // CAN 恢复中的 loading 状态
+  const disablingAll = ref(false)  // 全部禁用中的 loading 状态
+  const enablingAll = ref(false)   // 全部使能中的 loading 状态
 
   /**
    * 通过 WebSocket 向 Terminal 请求可用姿态列表
@@ -228,6 +230,56 @@ export function useRobot() {
     }
   }
 
+  /**
+   * 全部禁用：失能所有电机（安全停机）
+   */
+  async function disableAllMotors() {
+    if (disablingAll.value) return
+    disablingAll.value = true
+    try {
+      const response = await fetch('/api/robot/disable_all_motors', { method: 'POST' })
+      const json = await response.json()
+      const data = json.data || {}
+      if (data.success) {
+        ElMessage.success('已发送全部禁用指令')
+      } else {
+        ElMessage.warning(json.message || '全部禁用失败')
+      }
+      return data
+    } catch (error) {
+      console.error('全部禁用失败:', error)
+      ElMessage.error('与服务器通信错误')
+      return { success: false }
+    } finally {
+      disablingAll.value = false
+    }
+  }
+
+  /**
+   * 全部使能：使能所有电机
+   */
+  async function enableAllMotors() {
+    if (enablingAll.value) return
+    enablingAll.value = true
+    try {
+      const response = await fetch('/api/robot/enable_all_motors', { method: 'POST' })
+      const json = await response.json()
+      const data = json.data || {}
+      if (data.success) {
+        ElMessage.success('已发送全部使能指令')
+      } else {
+        ElMessage.warning(json.message || '全部使能失败')
+      }
+      return data
+    } catch (error) {
+      console.error('全部使能失败:', error)
+      ElMessage.error('与服务器通信错误')
+      return { success: false }
+    } finally {
+      enablingAll.value = false
+    }
+  }
+
   return {
     isRobotEngaged,
     showWarning,
@@ -239,6 +291,8 @@ export function useRobot() {
     updateStatus,
     recalibrateMultiturn,
     canRecover,
+    disableAllMotors,
+    enableAllMotors,
     poseList,
     currentPoseName,
     poseLoading,

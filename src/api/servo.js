@@ -113,15 +113,6 @@ export function setServoZero(servoId, port) {
 }
 
 /**
- * 批量设置所有电机零点（将当前位置设为 0，写入 Flash）
- * 用于 RobStride 等非 Feetech 电机：摆好期望零位后一键标零。
- * @param {string} port - CAN 端口路径，默认 'can0'
- */
-export function batchSetServoZero(port) {
-  return request.post('/servo/batch-calibrate-zero', { port })
-}
-
-/**
  * 触发 Terminal 批量校准所有舵机零位偏移量
  * Terminal 读取编码器位置 → 反算 zero_offset → 即时生效 → 写回 YAML
  * @param {string} port - 可选，不传则校准所有端口

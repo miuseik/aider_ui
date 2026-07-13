@@ -100,7 +100,7 @@ yi<template>
           </div>
         </div>
 <!--        刷新状态-->
-        <div>
+        <div class="toolbar-right">
           <!-- 刷新状态按钮 -->
           <el-button
             type="info"
@@ -137,6 +137,23 @@ yi<template>
             @click="onCanRecoverClick"
           >
             🔄 CAN 恢复
+          </el-button>
+          <!-- 全部禁用 / 全部使能 -->
+          <el-button
+            type="danger"
+            :loading="disablingAll"
+            :disabled="disablingAll"
+            @click="onDisableAllClick"
+          >
+            ⏹️ 全部禁用
+          </el-button>
+          <el-button
+            type="success"
+            :loading="enablingAll"
+            :disabled="enablingAll"
+            @click="onEnableAllClick"
+          >
+            ▶️ 全部使能
           </el-button>
         </div>
       </div>
@@ -179,7 +196,9 @@ const router = useRouter()
 const { vrServerUrl } = useConfig()
 const {
   isRobotEngaged, showWarning, connecting, calibrating, recoveringCan,
+  disablingAll, enablingAll,
   toggleRobotEngagement, showConnectionWarning, updateStatus, recalibrateMultiturn, canRecover,
+  disableAllMotors, enableAllMotors,
   poseList, currentPoseName, poseLoading, fetchPoses, gotoPose,
 } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
@@ -264,6 +283,34 @@ const syncLiveStatus = async () => {
 function onPoseSelected(poseName) {
   if (!poseName) return
   gotoPose(poseName, 'both')
+}
+
+// 全部禁用：点击按钮触发
+async function onDisableAllClick() {
+  try {
+    await ElMessageBox.confirm(
+      '将失能所有电机（安全停机）。\n\n电机将保持当前位置不动，需重新使能后才能运动。',
+      '全部禁用',
+      { confirmButtonText: '确认禁用', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+  await disableAllMotors()
+}
+
+// 全部使能：点击按钮触发
+async function onEnableAllClick() {
+  try {
+    await ElMessageBox.confirm(
+      '将使能所有电机（自动扫描并注册总线上电机）。\n\n若电机离线将无法使能。',
+      '全部使能',
+      { confirmButtonText: '确认使能', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+  await enableAllMotors()
 }
 
 // CAN 恢复：点击按钮触发
@@ -431,6 +478,12 @@ onUnmounted(() => {
 .toolbar-left {
   display: flex;
   align-items: center;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .status-indicators {

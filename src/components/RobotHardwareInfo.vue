@@ -11,14 +11,6 @@
           {{ calibrating ? '校准中...' : '🔧 一键记录全部' }}
         </button>
         <button
-          class="btn btn-batch-zero"
-          :disabled="calibrating || nonFeetechCount === 0"
-          @click="$emit('batchSetZero')"
-          title="将所有非Feetech电机的当前位置设为机械零位 (写入Flash，仅需一次)"
-        >
-          {{ calibrating ? '标零中...' : '🎯 批量标零' }}
-        </button>
-        <button
           class="btn btn-reset"
           :disabled="calibrating"
           @click="confirmReset"
@@ -156,7 +148,7 @@ const props = defineProps({
   lastResult: { type: String, default: '' },
 })
 
-const emit = defineEmits(['claim', 'ping', 'calibrate', 'update-angle', 'batchCalibrate', 'batchSetZero', 'recordOffset', 'resetAll', 'setZero'])
+const emit = defineEmits(['claim', 'ping', 'calibrate', 'update-angle', 'batchCalibrate', 'recordOffset', 'resetAll', 'setZero'])
 
 function getPartServos(partConfig) {
   if (!partConfig) return []
@@ -177,23 +169,6 @@ const feetechCount = computed(() => {
       if (joint && typeof joint === 'object') {
         const brand = (joint.brand || '').toLowerCase()
         if (brand.startsWith('feetech')) count++
-      }
-    }
-  }
-  return count
-})
-
-/** 统计非 Feetech 关节数量（RobStride 等，支持硬件标零） */
-const nonFeetechCount = computed(() => {
-  if (!props.robotConfig) return 0
-  let count = 0
-  for (const partKey of Object.keys(props.robotConfig)) {
-    const part = props.robotConfig[partKey]
-    if (!part || typeof part !== 'object' || Array.isArray(part)) continue
-    for (const joint of Object.values(part)) {
-      if (joint && typeof joint === 'object') {
-        const brand = (joint.brand || '').toLowerCase()
-        if (brand && !brand.startsWith('feetech')) count++
       }
     }
   }
