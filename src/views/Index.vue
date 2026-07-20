@@ -8,28 +8,39 @@ yi<template>
           <div class="status-indicators">
             <!-- 第一行：基础连接状态 -->
             <el-row :gutter="12" style="margin-bottom: 8px;">
-              <el-col :span="6">
+              <el-col :span="4">
                 <div class="status-item">
                   <span class="status-dot" :class="{ connected: liveStatus.left_arm_connected }"></span>
                   <el-tag size="small">左臂</el-tag>
                 </div>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="4">
                 <div class="status-item">
                   <span class="status-dot" :class="{ connected: liveStatus.right_arm_connected }"></span>
                   <el-tag size="small">右臂</el-tag>
                 </div>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="4">
                 <div class="status-item">
                   <span class="status-dot" :class="{ connected: liveStatus.vrConnected }"></span>
                   <el-tag size="small">VR</el-tag>
                 </div>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="4">
                 <div class="status-item">
                   <span class="status-dot" :class="{ connected: liveStatus.wsConnected }"></span>
                   <el-tag size="small">WS</el-tag>
+                </div>
+              </el-col>
+              <el-col :span="4">
+                <div class="status-item">
+                  <span class="status-dot" :class="{ connected: liveStatus.exoskeleton_connected }"></span>
+                  <el-tag size="small" :type="liveStatus.exoskeleton_connected ? 'success' : 'info'">外骨骼</el-tag>
+                </div>
+              </el-col>
+              <el-col :span="4">
+                <div class="status-item" v-if="liveStatus.exoskeleton_connected">
+                  <el-tag size="small" type="warning">🦴 {{ liveStatus.exoskeleton_angles?.length || 0 }}路</el-tag>
                 </div>
               </el-col>
             </el-row>
@@ -158,6 +169,28 @@ yi<template>
         </div>
       </div>
       <!-- Main Content - Single Screen Layout -->
+      <!-- 外骨骼关节角度显示 -->
+      <div v-if="liveStatus.exoskeleton_connected && liveStatus.exoskeleton_angles?.length" class="exo-panel">
+        <div class="exo-header">
+          <span class="exo-title">🦴 外骨骼关节角度 ({{ liveStatus.exoskeleton_angles.length }}路)</span>
+          <span class="exo-time" v-if="liveStatus.exoskeleton_timestamp">
+            {{ new Date(liveStatus.exoskeleton_timestamp).toLocaleTimeString() }}
+          </span>
+        </div>
+        <div class="exo-angles">
+          <div
+            v-for="(angle, idx) in liveStatus.exoskeleton_angles"
+            :key="idx"
+            class="exo-angle-item"
+          >
+            <span class="exo-angle-idx">{{ idx }}</span>
+            <span class="exo-angle-val" :class="{ active: angle !== null && angle !== undefined }">
+              {{ angle != null ? angle.toFixed(1) + '°' : '--' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <KeyboardHelp
         :is-keyboard-enabled="isKeyboardEnabled"
         :pose-list="poseList"
@@ -240,6 +273,10 @@ const liveStatus = ref({
   network: { ip: '--', ssid: '--', hostname: '--' },
   // 多圈丢失电机列表
   lost_multiturn: [],
+  // 外骨骼
+  exoskeleton_connected: false,
+  exoskeleton_angles: [],
+  exoskeleton_timestamp: 0,
 })
 
 // 统一的状态同步函数
@@ -435,6 +472,10 @@ onMounted(() => {
         lift_height_mm: data.lift_height_mm || 0,
         lost_multiturn: data.lost_multiturn || [],
       }
+    } else if (data.type === 'exo_data') {
+      liveStatus.value.exoskeleton_connected = true
+      liveStatus.value.exoskeleton_angles = data.joints || []
+      liveStatus.value.exoskeleton_timestamp = data.timestamp || Date.now()
     }
   })
 
@@ -532,6 +573,66 @@ onUnmounted(() => {
   
   input[type="checkbox"] {
     cursor: pointer;
+  }
+}
+
+/* 外骨骼角度面板 */
+.exo-panel {
+  margin: 0 20px 16px 20px;
+  background: rgba(26, 26, 46, 0.8);
+  border: 1px solid rgba(100, 200, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.exo-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.exo-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(100, 200, 255, 0.9);
+}
+
+.exo-time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.exo-angles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.exo-angle-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-width: 56px;
+}
+
+.exo-angle-idx {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  min-width: 16px;
+}
+
+.exo-angle-val {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Courier New', monospace;
+
+  &.active {
+    color: rgba(52, 199, 89, 0.9);
+    font-weight: 600;
   }
 }
 </style>

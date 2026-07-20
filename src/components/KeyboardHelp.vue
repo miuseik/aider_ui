@@ -84,6 +84,10 @@
               <span class="key-desc">腕部弯曲</span>
             </div>
             <div class="key-row">
+              <span><kbd class="key">F</kbd> / <kbd class="key">G</kbd></span>
+              <span class="key-desc">腕部偏航</span>
+            </div>
+            <div class="key-row">
               <span><kbd class="key">C</kbd></span>
               <span class="key-desc">切换夹爪</span>
             </div>
@@ -123,14 +127,18 @@
             </div>
             <div class="key-row">
               <span><kbd class="key">U</kbd> / <kbd class="key">O</kbd></span>
-              <span class="key-desc">上升 / 下降</span>
+              <span class="key-desc">下降 / 上升</span>
             </div>
             <div class="key-row">
               <span><kbd class="key">H</kbd> / <kbd class="key">Y</kbd></span>
               <span class="key-desc">腕部弯曲</span>
             </div>
             <div class="key-row">
-              <span><kbd class="key">M</kbd> / <kbd class="key">,</kbd></span>
+              <span><kbd class="key">P</kbd> / <kbd class="key">/</kbd></span>
+              <span class="key-desc">腕部偏航</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">N</kbd> / <kbd class="key">M</kbd></span>
               <span class="key-desc">腕部翻滚</span>
             </div>
             <div class="key-row">
@@ -139,13 +147,29 @@
             </div>
           </div>
         </div>
-        
-
+        <div class="help-column">
+          <h4>身体（腰/头）</h4>
+          <div class="key-group">
+            <div class="key-row">
+              <span><kbd class="key">1</kbd> / <kbd class="key">2</kbd></span>
+              <span class="key-desc">腰部 左转 / 右转</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">3</kbd> / <kbd class="key">4</kbd></span>
+              <span class="key-desc">头部 左转 / 右转</span>
+            </div>
+            <div class="key-row">
+              <span><kbd class="key">5</kbd> / <kbd class="key">6</kbd></span>
+              <span class="key-desc">头部 低头 / 抬头</span>
+            </div>
+          </div>
+        </div>
       </div>
       
       <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #bdc3c7; color: #7f8c8d; font-size: 13px;">
         <strong>提示：</strong>按下移动键时位置控制会自动激活。
-        使用 <kbd class="key">ESC</kbd> 停止系统。
+        <kbd class="key">Tab</kbd> 切换左臂位置控制，<kbd class="key">Enter</kbd> 切换右臂位置控制，
+        <kbd class="key">ESC</kbd> 断开连接。
       </div>
     </div>
   </div>
