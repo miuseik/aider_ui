@@ -181,12 +181,17 @@ yi<template>
           <div
             v-for="(angle, idx) in liveStatus.exoskeleton_angles"
             :key="idx"
-            class="exo-angle-item"
+            class="exo-bar-item"
           >
-            <span class="exo-angle-idx">{{ idx }}</span>
-            <span class="exo-angle-val" :class="{ active: angle !== null && angle !== undefined }">
-              {{ angle != null ? angle.toFixed(1) + '°' : '--' }}
-            </span>
+            <span class="exo-bar-idx">{{ String(idx).padStart(2, '0') }}</span>
+            <div class="exo-bar-track">
+              <div
+                class="exo-bar-fill"
+                :class="{ 'exo-bar-zero': barPercent(angle) <= 0 }"
+                :style="{ width: Math.max(0, Math.min(100, barPercent(angle))) + '%' }"
+              ></div>
+            </div>
+            <span class="exo-bar-val">{{ angle != null ? angle.toFixed(1) : '--' }}</span>
           </div>
         </div>
       </div>
@@ -278,6 +283,9 @@ const liveStatus = ref({
   exoskeleton_angles: [],
   exoskeleton_timestamp: 0,
 })
+
+// 外骨骼死区过滤缓存（非响应式，避免每帧触发渲染）
+let _exoLastFiltered = []
 
 // 统一的状态同步函数
 const syncLiveStatus = async () => {
@@ -443,6 +451,12 @@ const checkWsConnection = async () => {
 // WebSocket 硬件信息监听器（一次性推送，不轮询）
 let wsUnsubscribe = null
 
+// 外骨骼进度条百分比: 原始角度约 -135~0, 归一化到 0~100%
+const barPercent = (angle) => {
+  if (angle == null) return 0
+  return ((angle + 135) / 135) * 100
+}
+
 onMounted(() => {
   // 首先用 store 已有的状态快速初始化按钮，避免闪烁
   if (isRobotEngaged.value) {
@@ -474,8 +488,22 @@ onMounted(() => {
       }
     } else if (data.type === 'exo_data') {
       liveStatus.value.exoskeleton_connected = true
-      liveStatus.value.exoskeleton_angles = data.joints || []
       liveStatus.value.exoskeleton_timestamp = data.timestamp || Date.now()
+      // 死区过滤: 角度变化 < 0.5° 不更新显示，消除电位器噪声抖动
+      const raw = data.joints || []
+      if (!_exoLastFiltered.length) {
+        _exoLastFiltered = [...raw]
+        liveStatus.value.exoskeleton_angles = [...raw]
+      } else {
+        const filtered = raw.map((v, i) => {
+          if (v == null) return v
+          const prev = _exoLastFiltered[i]
+          if (prev == null) return v
+          return Math.abs(v - prev) < 0.5 ? prev : v
+        })
+        _exoLastFiltered = filtered
+        liveStatus.value.exoskeleton_angles = filtered
+      }
     }
   })
 
@@ -576,24 +604,24 @@ onUnmounted(() => {
   }
 }
 
-/* 外骨骼角度面板 */
+/* 外骨骼角度面板 — 微型进度条 */
 .exo-panel {
-  margin: 0 20px 16px 20px;
+  margin: 0 20px 12px 20px;
   background: rgba(26, 26, 46, 0.8);
   border: 1px solid rgba(100, 200, 255, 0.15);
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 8px 12px;
 }
 
 .exo-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .exo-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: rgba(100, 200, 255, 0.9);
 }
@@ -606,33 +634,52 @@ onUnmounted(() => {
 .exo-angles {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px 6px;
 }
 
-.exo-angle-item {
+.exo-bar-item {
   display: flex;
   align-items: center;
   gap: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  padding: 2px 6px;
-  min-width: 56px;
+  width: 130px;
+  flex-shrink: 0;
 }
 
-.exo-angle-idx {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.3);
-  min-width: 16px;
-}
-
-.exo-angle-val {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+.exo-bar-idx {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.25);
   font-family: 'Courier New', monospace;
+  width: 14px;
+  text-align: right;
+  flex-shrink: 0;
+}
 
-  &.active {
-    color: rgba(52, 199, 89, 0.9);
-    font-weight: 600;
-  }
+.exo-bar-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.exo-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+  border-radius: 2px;
+  transition: width 0.15s ease;
+  min-width: 0;
+}
+
+.exo-bar-fill.exo-bar-zero {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.exo-bar-val {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: 'Courier New', monospace;
+  width: 40px;
+  text-align: right;
+  flex-shrink: 0;
 }
 </style>
