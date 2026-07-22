@@ -130,6 +130,28 @@ yi<template>
           >
             {{ connecting ? (isRobotEngaged ? '断开中…' : '连接中…') : (isRobotEngaged ? '🔴🔌 断开' : '🟢 🔌连接') }}
           </el-button>
+          <!-- 控制模式选择器 -->
+          <div class="mode-selector">
+            <span class="mode-label">控制模式</span>
+            <el-radio-group
+              v-model="controlMode"
+              size="small"
+              @change="onControlModeChange"
+            >
+              <el-radio-button value="keyboard">键盘</el-radio-button>
+              <el-radio-button value="pure_vr">纯VR</el-radio-button>
+              <el-radio-button value="exo_vr_mixed">外骨骼+VR</el-radio-button>
+            </el-radio-group>
+            <el-button
+              v-if="controlMode === 'exo_vr_mixed'"
+              :type="exoActive ? 'success' : 'warning'"
+              size="small"
+              class="exo-toggle-btn"
+              @click="toggleExo"
+            >
+              🦴 {{ exoActive ? '外骨骼已激活' : '外骨骼待启(点击启用)' }}
+            </el-button>
+          </div>
           <!-- 重新标零按钮（掉圈数时显示） -->
           <el-button
             v-if="liveStatus.lost_multiturn.length > 0"
@@ -187,11 +209,11 @@ yi<template>
             <div class="exo-bar-track">
               <div
                 class="exo-bar-fill"
-                :class="{ 'exo-bar-zero': barPercent(angle) <= 0 }"
-                :style="{ width: Math.max(0, Math.min(100, barPercent(angle))) + '%' }"
+                :class="{ 'exo-bar-negative': barPercent(angle, idx) < 50 }"
+                :style="exoBarStyle(angle, idx)"
               ></div>
             </div>
-            <span class="exo-bar-val">{{ angle != null ? angle.toFixed(1) : '--' }}</span>
+            <span class="exo-bar-val">{{ calibratedAngle(idx, angle).toFixed(1) }}</span>
           </div>
         </div>
       </div>
@@ -225,6 +247,7 @@ import { useKeyboard } from '../composables/useKeyboard'
 import KeyboardHelp from '../components/KeyboardHelp.vue'
 import RobotHardwareInfo from '../components/RobotHardwareInfo.vue'
 import { useServoStore } from '@/stores/servo'
+import { useRobotStore } from '@/stores/robot'
 import { wsClient } from '@/utils/websocket'
 
 // Router
@@ -246,6 +269,28 @@ const showPoseSelector = computed(() => Object.keys(poseList.value).length > 0)
 
 // State
 const refreshing = ref(false)
+
+// 控制模式
+const robotStore = useRobotStore()
+const { controlMode, exoActive } = robotStore
+
+async function onControlModeChange(mode) {
+  try {
+    // 通过 HTTP API 设置模式（Server 会广播到所有客户端 + Terminal）
+    await fetch('/api/control-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    })
+  } catch (e) {
+    console.error('设置控制模式失败:', e)
+  }
+}
+
+function toggleExo() {
+  wsClient.send(JSON.stringify({ type: 'exo_toggle' }))
+  console.log('[Index] 外骨骼启停切换')
+}
 
 // === 从 Pinia 读取机器人硬件配置（App.vue 初始化时已加载） ===
 const servoStore = useServoStore()
@@ -284,8 +329,9 @@ const liveStatus = ref({
   exoskeleton_timestamp: 0,
 })
 
-// 外骨骼死区过滤缓存（非响应式，避免每帧触发渲染）
-let _exoLastFiltered = []
+
+
+
 
 // 统一的状态同步函数
 const syncLiveStatus = async () => {
@@ -451,10 +497,77 @@ const checkWsConnection = async () => {
 // WebSocket 硬件信息监听器（一次性推送，不轮询）
 let wsUnsubscribe = null
 
-// 外骨骼进度条百分比: 原始角度约 -135~0, 归一化到 0~100%
-const barPercent = (angle) => {
-  if (angle == null) return 0
-  return ((angle + 135) / 135) * 100
+// 外骨骼校准数据缓存 (从 /api/exo/calibration 加载)
+let exoCalibCache = {}  // { channel: { pot_zero, pot_min, pot_max, angle_min, angle_max, reverse } }
+
+// 从原始电位器角度计算校准后角度 (与 ExoHandler._apply_calibration 一致)
+function calibratedAngle(ch, rawAngle) {
+  const cal = exoCalibCache[ch]
+  if (!cal || cal.pot_zero == null) return rawAngle  // 无校准数据则原样显示
+
+  let angle
+  if (rawAngle >= cal.pot_zero) {
+    const span = cal.pot_max - cal.pot_zero
+    if (span < 0.001) { angle = 0 }
+    else {
+      const ratio = Math.max(0, Math.min(1, (rawAngle - cal.pot_zero) / span))
+      angle = ratio * cal.angle_max
+    }
+  } else {
+    const span = cal.pot_zero - cal.pot_min
+    if (span < 0.001) { angle = 0 }
+    else {
+      const ratio = Math.max(0, Math.min(1, (cal.pot_zero - rawAngle) / span))
+      angle = -ratio * Math.abs(cal.angle_min)
+    }
+  }
+  if (cal.reverse) angle = -angle
+  return angle
+}
+
+// 外骨骼进度条百分比: 双向显示, 50%=零位, 0%=angle_min, 100%=angle_max
+const barPercent = (angle, ch) => {
+  if (angle == null) return 50
+  const cal = exoCalibCache[ch]
+  if (!cal || cal.pot_zero == null) {
+    // 无校准数据: 旧式单向映射
+    return ((angle + 135) / 135) * 100
+  }
+  const ca = calibratedAngle(ch, angle)
+  const totalRange = Math.abs(cal.angle_max) + Math.abs(cal.angle_min)
+  if (totalRange < 0.001) return 50
+  // 将 [angle_min, angle_max] 映射到 [0, 100], 零位 = 50%
+  return ((ca - cal.angle_min) / totalRange) * 100
+}
+
+// 加载外骨骼校准数据
+async function loadExoCalibration() {
+  try {
+    const resp = await fetch('/api/exo/calibration')
+    const data = await resp.json()
+    if (data.data) {
+      const cache = {}
+      for (const entry of data.data) {
+        cache[entry.channel] = entry
+      }
+      exoCalibCache = cache
+      console.log('[Index] 已加载外骨骼校准:', Object.keys(exoCalibCache).length, '条')
+    }
+  } catch (e) {
+    console.warn('[Index] 加载外骨骼校准失败:', e)
+  }
+}
+
+// 双向进度条样式: 从中心(50%)向两侧展开
+const exoBarStyle = (angle, ch) => {
+  const pct = barPercent(angle, ch)
+  if (pct >= 50) {
+    // 正方向: 从 50% 向右填充
+    return { left: '50%', width: (pct - 50) + '%' }
+  } else {
+    // 负方向: 从 50% 向左填充
+    return { left: pct + '%', width: (50 - pct) + '%' }
+  }
 }
 
 onMounted(() => {
@@ -468,6 +581,9 @@ onMounted(() => {
     // 始终获取可用姿态列表（含仿真模式，不依赖真机连接状态）
     fetchPoses()
   })
+
+  // 加载外骨骼校准配置（用于进度条双向显示）
+  loadExoCalibration()
 
   // 监听 robot_hardware_info：实时更新页面上的硬件连接状态指示器
   // 注意：机器人连接/断开 + 姿态同步已由 App.vue 全局监听处理
@@ -489,21 +605,7 @@ onMounted(() => {
     } else if (data.type === 'exo_data') {
       liveStatus.value.exoskeleton_connected = true
       liveStatus.value.exoskeleton_timestamp = data.timestamp || Date.now()
-      // 死区过滤: 角度变化 < 0.5° 不更新显示，消除电位器噪声抖动
-      const raw = data.joints || []
-      if (!_exoLastFiltered.length) {
-        _exoLastFiltered = [...raw]
-        liveStatus.value.exoskeleton_angles = [...raw]
-      } else {
-        const filtered = raw.map((v, i) => {
-          if (v == null) return v
-          const prev = _exoLastFiltered[i]
-          if (prev == null) return v
-          return Math.abs(v - prev) < 0.5 ? prev : v
-        })
-        _exoLastFiltered = filtered
-        liveStatus.value.exoskeleton_angles = filtered
-      }
+      liveStatus.value.exoskeleton_angles = [...(data.joints || [])]
     }
   })
 
@@ -660,18 +762,33 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 2px;
   overflow: hidden;
+  position: relative;
+}
+
+/* 中心线 (零位指示) */
+.exo-bar-track::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.3);
+  z-index: 1;
 }
 
 .exo-bar-fill {
+  position: absolute;
+  top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+  background: linear-gradient(90deg, #2ecc71, #27ae60);
   border-radius: 2px;
-  transition: width 0.15s ease;
+  transition: left 0.15s ease, width 0.15s ease;
   min-width: 0;
 }
 
-.exo-bar-fill.exo-bar-zero {
-  background: rgba(255, 255, 255, 0.1);
+.exo-bar-fill.exo-bar-negative {
+  background: linear-gradient(90deg, #e74c3c, #c0392b);
 }
 
 .exo-bar-val {
@@ -681,5 +798,23 @@ onUnmounted(() => {
   width: 40px;
   text-align: right;
   flex-shrink: 0;
+}
+
+/* 控制模式选择器 */
+.mode-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+}
+
+.mode-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.exo-status-tag {
+  margin-left: 2px;
 }
 </style>

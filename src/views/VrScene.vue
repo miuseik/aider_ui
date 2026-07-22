@@ -43,6 +43,7 @@ import * as THREE from 'three'
 import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
+import { useRobotStore } from '../stores/robot.js'
 import WebrtcVideo from '../components/WebrtcVideo.vue'
 
 const route = useRoute()
@@ -275,6 +276,14 @@ function setupEventListeners() {
     rightRelativeRotation = { x: 0, y: 0, z: 0 }
     rightZAxisRotation = 0
     sendGripRelease('right')
+  })
+
+  // A 键 (右手柄 buttons[4]): 外骨骼启停 (仅 exo+VR 模式有效)
+  const robotStore = useRobotStore()
+  rightHand.addEventListener('abuttondown', () => {
+    if (robotStore.controlMode !== 'exo_vr_mixed') return
+    wsClient.send(JSON.stringify({ type: 'exo_toggle' }))
+    console.log('[VrScene] A键 → exo_toggle')
   })
 }
 

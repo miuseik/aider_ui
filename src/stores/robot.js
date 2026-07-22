@@ -10,7 +10,9 @@ export const useRobotStore = defineStore('robot', () => {
   const isRobotEngaged = ref(false)
   const connecting = ref(false)    // 连接/断开操作进行中
 
-  // ---- 姿态相关 ----
+  // ---- 控制模式 ----
+  const controlMode = ref('pure_vr')      // 'pure_vr' | 'exo_vr_mixed'
+  const exoActive = ref(false)            // 外骨骼启停（A键或前端切换）
   const poseList = ref({})         // { poseName: { left: [...], right: [...] } }
   const currentPoseName = ref('')  // 当前选中的姿态名
   const poseLoading = ref(false)
@@ -32,6 +34,14 @@ export const useRobotStore = defineStore('robot', () => {
     poseLoading.value = val
   }
 
+  function setControlMode(mode) {
+    controlMode.value = mode
+  }
+
+  function setExoActive(val) {
+    exoActive.value = val
+  }
+
   function setCurrentPoseName(name) {
     currentPoseName.value = name
   }
@@ -46,11 +56,15 @@ export const useRobotStore = defineStore('robot', () => {
   return {
     isRobotEngaged,
     connecting,
+    controlMode,
+    exoActive,
     poseList,
     currentPoseName,
     poseLoading,
     setEngaged,
     setConnecting,
+    setControlMode,
+    setExoActive,
     setPoseList,
     setPoseLoading,
     setCurrentPoseName,

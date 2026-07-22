@@ -86,6 +86,11 @@ onMounted(() => {
         ElMessage.error(data.message || '姿态切换失败')
       }
     }
+    // 控制模式同步（Server 广播）
+    if (data.type === 'control_mode') {
+      robotStore.setControlMode(data.mode || 'pure_vr')
+      robotStore.setExoActive(!!data.exo_active)
+    }
   })
 
   // WebSocket 重连后，如果之前机器人已连接，延迟重试姿态同步
