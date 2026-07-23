@@ -71,6 +71,7 @@ let leftGripDown = false
 let rightGripDown = false
 let leftTriggerDown = false
 let rightTriggerDown = false
+let rightAButtonPrev = false  // 右手柄 A 键(buttons[4])边沿检测用
 
 let leftGripInitialRotation = null
 let rightGripInitialRotation = null
@@ -278,13 +279,8 @@ function setupEventListeners() {
     sendGripRelease('right')
   })
 
-  // A 键 (右手柄 buttons[4]): 外骨骼启停 (仅 exo+VR 模式有效)
-  const robotStore = useRobotStore()
-  rightHand.addEventListener('abuttondown', () => {
-    if (robotStore.controlMode !== 'exo_vr_mixed') return
-    wsClient.send(JSON.stringify({ type: 'exo_toggle' }))
-    console.log('[VrScene] A键 → exo_toggle')
-  })
+  // 注意: A 键(右手柄 buttons[4])外骨骼启停已移至 onVrTick 内的 checkExoToggle() 做边沿检测，
+  // 不再依赖 a-frame 的 'abuttondown' 事件（部分头显/浏览器不触发该事件，导致按 A 无反应）。
 }
 
 function cleanupEventListeners() {
@@ -464,6 +460,24 @@ function setupRendererAnimationLoop(retryCount = 0) {
   console.log('[VrScene] data-panel-updater 组件已注册')
 }
 
+function checkExoToggle(vrData) {
+  // 右手柄 A 键 = buttons[4]（见 utils/vrData.js getButtonName 的 rightSpecific[4]='A键'）
+  if (!vrData || !vrData.rightController) return
+  const aBtn = (vrData.rightController.buttons || []).find(b => b.index === 4)
+  const pressed = !!(aBtn && aBtn.pressed)
+  // 仅在按下上升沿触发一次（避免长按每帧重复 toggle 来回跳）
+  if (pressed && !rightAButtonPrev) {
+    const store = useRobotStore()
+    if (store.controlMode === 'exo_vr_mixed') {
+      wsClient.send({ type: 'exo_toggle' })
+      console.log('[VrScene] A键(右手柄) → exo_toggle')
+    } else {
+      console.log('[VrScene] A键忽略：当前非 exo_vr_mixed 模式')
+    }
+  }
+  rightAButtonPrev = pressed
+}
+
 function onVrTick(scene) {
   // 防御：scene 可能为 null（组件卸载过程中 tick 仍可能被调用）
   if (!scene) return
@@ -489,18 +503,20 @@ function onVrTick(scene) {
   // ---- 手柄姿态计算（轻量，每帧执行）----
   updateRelativeRotation()
 
+  // ---- 每帧取一次 VR 数据（A 键边沿检测 + 节流发送/面板共用）----
+  const vrData = getFullVRData(scene, frame)
+
+  // ---- A 键(右手柄 buttons[4])外骨骼启停：独立于握把，每帧边沿检测 ----
+  checkExoToggle(vrData)
+
   // ---- VR 数据采集 + WS 发送（节流 ~30fps）----
-  let vrData = null
   if (now - lastWsSendTime >= WS_SEND_INTERVAL) {
-    vrData = getFullVRData(scene, frame)
     sendVRData(vrData)
     lastWsSendTime = now
   }
 
   // ---- 数据面板重绘（节流 ~10fps，最重的操作）----
   if (now - lastPanelRedrawTime >= PANEL_REDRAW_INTERVAL) {
-    // 如果本轮没取过 vrData，补取一次
-    if (!vrData) vrData = getFullVRData(scene, frame)
     updateDataPanelInFrame(vrData)
     lastPanelRedrawTime = now
   }
