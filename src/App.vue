@@ -77,6 +77,10 @@ onMounted(() => {
     if (data.type === 'list_poses_response') {
       robotStore.setPoseList(data.poses || {})
       robotStore.setPoseLoading(false)
+      // 未手动选过时，默认选中下拉框里的默认姿态，避免“幽灵默认值”
+      if (!robotStore.currentPoseName) {
+        robotStore.setCurrentPoseName(data.default_pose || 'default')
+      }
     }
     // goto_pose 响应
     if (data.type === 'goto_pose_response') {

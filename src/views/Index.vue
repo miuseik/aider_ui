@@ -149,7 +149,7 @@ yi<template>
               class="exo-toggle-btn"
               @click="toggleExo"
             >
-              🦴 {{ exoActive ? '外骨骼已激活' : '外骨骼待启(点击启用)' }}
+              🦴 {{ exoActive ? '外骨骼已启用(点击停用)' : '外骨骼待启用(点击启用)' }}
             </el-button>
           </div>
           <!-- 重新标零按钮（掉圈数时显示） -->
@@ -191,33 +191,6 @@ yi<template>
         </div>
       </div>
       <!-- Main Content - Single Screen Layout -->
-      <!-- 外骨骼关节角度显示 -->
-      <div v-if="liveStatus.exoskeleton_connected && liveStatus.exoskeleton_angles?.length" class="exo-panel">
-        <div class="exo-header">
-          <span class="exo-title">🦴 外骨骼关节角度 ({{ liveStatus.exoskeleton_angles.length }}路)</span>
-          <span class="exo-time" v-if="liveStatus.exoskeleton_timestamp">
-            {{ new Date(liveStatus.exoskeleton_timestamp).toLocaleTimeString() }}
-          </span>
-        </div>
-        <div class="exo-angles">
-          <div
-            v-for="(angle, idx) in liveStatus.exoskeleton_angles"
-            :key="idx"
-            class="exo-bar-item"
-          >
-            <span class="exo-bar-idx">{{ String(idx).padStart(2, '0') }}</span>
-            <div class="exo-bar-track">
-              <div
-                class="exo-bar-fill"
-                :class="{ 'exo-bar-negative': barPercent(angle, idx) < 50 }"
-                :style="exoBarStyle(angle, idx)"
-              ></div>
-            </div>
-            <span class="exo-bar-val">{{ calibratedAngle(idx, angle).toFixed(1) }}</span>
-          </div>
-        </div>
-      </div>
-
       <KeyboardHelp
         :is-keyboard-enabled="isKeyboardEnabled"
         :pose-list="poseList"
@@ -231,6 +204,13 @@ yi<template>
       <RobotHardwareInfo
         :robot-config="liveRobotConfig"
         :scanning="false"
+        :exo-angles="liveStatus.exoskeleton_angles"
+        :exo-calibration="exoCalibCache"
+        :exo-zeroing="exoZeroing"
+        :exo-zeroing-channels="exoZeroingChannels.value"
+        @exo-zero="onExoZero"
+        @exo-zero-channel="onExoZeroChannel"
+        @exo-update-calibration="onExoUpdateCalibration"
       />
     </div>
   </el-config-provider>
@@ -248,6 +228,7 @@ import KeyboardHelp from '../components/KeyboardHelp.vue'
 import RobotHardwareInfo from '../components/RobotHardwareInfo.vue'
 import { useServoStore } from '@/stores/servo'
 import { useRobotStore } from '@/stores/robot'
+import { storeToRefs } from 'pinia'
 import { wsClient } from '@/utils/websocket'
 
 // Router
@@ -264,15 +245,17 @@ const {
 } = useRobot()
 const { isKeyboardEnabled, toggleKeyboardControl, handleKeyDown, handleKeyUp } = useKeyboard(isRobotEngaged, showConnectionWarning)
 
-// 姿态选择器显隐：WebSocket 连接且已加载姿态列表时显示
-const showPoseSelector = computed(() => Object.keys(poseList.value).length > 0)
+// 姿态选择器始终显示（姿态列表来自静态配置，不依赖机器人连接）
+const showPoseSelector = computed(() => true)
 
 // State
 const refreshing = ref(false)
+const exoZeroing = ref(false)  // 一键归零 loading 状态
+const exoZeroingChannels = ref(new Set())  // 正在单通道归零的通道集合
 
 // 控制模式
 const robotStore = useRobotStore()
-const { controlMode, exoActive } = robotStore
+const { controlMode, exoActive } = storeToRefs(robotStore)
 
 async function onControlModeChange(mode) {
   try {
@@ -364,6 +347,13 @@ const syncLiveStatus = async () => {
       }
       // 同步 foundServos 给 RobotPart inject 使用
       foundServos.value = data.servos || []
+      // 更新控制模式（来自 /api/status）
+      if (data.control_mode) {
+        robotStore.setControlMode(data.control_mode)
+      }
+      if (data.exo_active !== undefined) {
+        robotStore.setExoActive(!!data.exo_active)
+      }
     }
   } finally {
     refreshing.value = false
@@ -498,47 +488,7 @@ const checkWsConnection = async () => {
 let wsUnsubscribe = null
 
 // 外骨骼校准数据缓存 (从 /api/exo/calibration 加载)
-let exoCalibCache = {}  // { channel: { pot_zero, pot_min, pot_max, angle_min, angle_max, reverse } }
-
-// 从原始电位器角度计算校准后角度 (与 ExoHandler._apply_calibration 一致)
-function calibratedAngle(ch, rawAngle) {
-  const cal = exoCalibCache[ch]
-  if (!cal || cal.pot_zero == null) return rawAngle  // 无校准数据则原样显示
-
-  let angle
-  if (rawAngle >= cal.pot_zero) {
-    const span = cal.pot_max - cal.pot_zero
-    if (span < 0.001) { angle = 0 }
-    else {
-      const ratio = Math.max(0, Math.min(1, (rawAngle - cal.pot_zero) / span))
-      angle = ratio * cal.angle_max
-    }
-  } else {
-    const span = cal.pot_zero - cal.pot_min
-    if (span < 0.001) { angle = 0 }
-    else {
-      const ratio = Math.max(0, Math.min(1, (cal.pot_zero - rawAngle) / span))
-      angle = -ratio * Math.abs(cal.angle_min)
-    }
-  }
-  if (cal.reverse) angle = -angle
-  return angle
-}
-
-// 外骨骼进度条百分比: 双向显示, 50%=零位, 0%=angle_min, 100%=angle_max
-const barPercent = (angle, ch) => {
-  if (angle == null) return 50
-  const cal = exoCalibCache[ch]
-  if (!cal || cal.pot_zero == null) {
-    // 无校准数据: 旧式单向映射
-    return ((angle + 135) / 135) * 100
-  }
-  const ca = calibratedAngle(ch, angle)
-  const totalRange = Math.abs(cal.angle_max) + Math.abs(cal.angle_min)
-  if (totalRange < 0.001) return 50
-  // 将 [angle_min, angle_max] 映射到 [0, 100], 零位 = 50%
-  return ((ca - cal.angle_min) / totalRange) * 100
-}
+const exoCalibCache = ref({})  // { channel: { pot_zero, pot_min, pot_max, angle_min, angle_max, reverse, arm, joint_index, joint_name, enabled } }
 
 // 加载外骨骼校准数据
 async function loadExoCalibration() {
@@ -550,23 +500,117 @@ async function loadExoCalibration() {
       for (const entry of data.data) {
         cache[entry.channel] = entry
       }
-      exoCalibCache = cache
-      console.log('[Index] 已加载外骨骼校准:', Object.keys(exoCalibCache).length, '条')
+      exoCalibCache.value = cache
+      console.log('[Index] 已加载外骨骼校准:', Object.keys(exoCalibCache.value).length, '条')
     }
   } catch (e) {
     console.warn('[Index] 加载外骨骼校准失败:', e)
   }
 }
 
-// 双向进度条样式: 从中心(50%)向两侧展开
-const exoBarStyle = (angle, ch) => {
-  const pct = barPercent(angle, ch)
-  if (pct >= 50) {
-    // 正方向: 从 50% 向右填充
-    return { left: '50%', width: (pct - 50) + '%' }
-  } else {
-    // 负方向: 从 50% 向左填充
-    return { left: pct + '%', width: (50 - pct) + '%' }
+// 一键归零: 将当前外骨骼 raw 角度写入 pot_zero (exo_calibration.yaml)
+// 走 HTTP API，不走 WS，因为这是校准配置操作
+async function onExoZero() {
+  // 统计已启用的通道数
+  const enabledCount = Object.values(exoCalibCache.value).filter(c => c.enabled).length
+
+  try {
+    await ElMessageBox.confirm(
+      `将当前所有 ${enabledCount} 个已启用通道的 raw 角度写入各自 pot_zero。\n\n请确认外骨骼已摆好零位姿态。`,
+      '一键归零',
+      {
+        confirmButtonText: '确认归零',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  exoZeroing.value = true
+  try {
+    const resp = await fetch('/api/exo/zero', { method: 'POST' })
+    const data = await resp.json()
+    if (data.code === 0) {
+      ElMessage.success(`归零完成: ${data.data?.updated_channels ?? '?'} 个通道已更新`)
+      // 重新加载校准数据以更新前端显示
+      await loadExoCalibration()
+    } else {
+      ElMessage.error(data.message || '归零失败')
+    }
+  } catch (e) {
+    ElMessage.error('归零请求失败')
+    console.error('[ExoZero]', e)
+  } finally {
+    exoZeroing.value = false
+  }
+}
+
+// 单通道归零: 将指定通道的当前 raw 角度写入其 pot_zero
+async function onExoZeroChannel(channel) {
+  // 确认弹窗，防止误触
+  const cal = exoCalibCache.value[channel]
+  const jointLabel = cal ? `${cal.joint_name || '?'} (${cal.arm}臂)` : `ch${channel}`
+  const rawAngle = liveStatus.value.exoskeleton_angles?.[channel]
+  const angleStr = rawAngle != null ? rawAngle.toFixed(1) : '?'
+
+  try {
+    await ElMessageBox.confirm(
+      `将 ch${channel}「${jointLabel}」当前位置 ${angleStr}° 设为新的零点 (pot_zero)`,
+      `归零 ch${channel}`,
+      {
+        confirmButtonText: '确认归零',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  // 标记该通道正在归零
+  const next = new Set(exoZeroingChannels.value)
+  next.add(channel)
+  exoZeroingChannels.value = next
+
+  try {
+    const resp = await fetch(`/api/exo/zero/${channel}`, { method: 'POST' })
+    const data = await resp.json()
+    if (data.code === 0) {
+      ElMessage.success(`ch${channel} 归零完成: pot_zero = ${data.data?.pot_zero?.toFixed(1) ?? '?'}`)
+      await loadExoCalibration()
+    } else {
+      ElMessage.error(data.message || `ch${channel} 归零失败`)
+    }
+  } catch (e) {
+    ElMessage.error(`ch${channel} 归零请求失败`)
+    console.error(`[ExoZeroChannel ${channel}]`, e)
+  } finally {
+    const removed = new Set(exoZeroingChannels.value)
+    removed.delete(channel)
+    exoZeroingChannels.value = removed
+  }
+}
+
+// 更新外骨骼单通道校准（partial update，只传修改的字段）
+async function onExoUpdateCalibration(update) {
+  try {
+    const resp = await fetch('/api/exo/calibration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    })
+    const data = await resp.json()
+    if (data.code === 0) {
+      ElMessage.success(`ch${update.channel} 设置已保存`)
+      await loadExoCalibration()
+    } else {
+      ElMessage.error(data.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error(`ch${update.channel} 设置保存失败`)
+    console.error('[ExoUpdateCalibration]', e)
   }
 }
 
@@ -576,7 +620,7 @@ onMounted(() => {
     liveStatus.value.robotEngaged = true
   }
 
-  // 初始同步一次全量状态（会用服务端真实状态覆盖 store）
+  // 初始同步一次全量状态（包含 control_mode，会用服务端真实状态覆盖 store）
   syncLiveStatus().then(() => {
     // 始终获取可用姿态列表（含仿真模式，不依赖真机连接状态）
     fetchPoses()
@@ -704,100 +748,6 @@ onUnmounted(() => {
   input[type="checkbox"] {
     cursor: pointer;
   }
-}
-
-/* 外骨骼角度面板 — 微型进度条 */
-.exo-panel {
-  margin: 0 20px 12px 20px;
-  background: rgba(26, 26, 46, 0.8);
-  border: 1px solid rgba(100, 200, 255, 0.15);
-  border-radius: 8px;
-  padding: 8px 12px;
-}
-
-.exo-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.exo-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(100, 200, 255, 0.9);
-}
-
-.exo-time {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.exo-angles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 6px;
-}
-
-.exo-bar-item {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  width: 130px;
-  flex-shrink: 0;
-}
-
-.exo-bar-idx {
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.25);
-  font-family: 'Courier New', monospace;
-  width: 14px;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.exo-bar-track {
-  flex: 1;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
-  overflow: hidden;
-  position: relative;
-}
-
-/* 中心线 (零位指示) */
-.exo-bar-track::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 2px;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.3);
-  z-index: 1;
-}
-
-.exo-bar-fill {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(90deg, #2ecc71, #27ae60);
-  border-radius: 2px;
-  transition: left 0.15s ease, width 0.15s ease;
-  min-width: 0;
-}
-
-.exo-bar-fill.exo-bar-negative {
-  background: linear-gradient(90deg, #e74c3c, #c0392b);
-}
-
-.exo-bar-val {
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.45);
-  font-family: 'Courier New', monospace;
-  width: 40px;
-  text-align: right;
-  flex-shrink: 0;
 }
 
 /* 控制模式选择器 */

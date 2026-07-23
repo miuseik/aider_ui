@@ -51,6 +51,8 @@ export function useRobot() {
       arm: arm,
       pose_name: poseName,
     })
+    // 同步下拉框选中项，使其与机器人实际目标姿态一致
+    store.setCurrentPoseName(poseName)
   }
 
   async function toggleRobotEngagement() {

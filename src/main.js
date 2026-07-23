@@ -8,10 +8,12 @@ import App from './App.vue'
 import router from './router'
 import '@/assets/styles/styles.scss'
 
-// 所有环境启用 vconsole
-import('vconsole').then(({ default: VConsole }) => {
-  new VConsole()
-})
+// 仅在开发环境启用 vconsole
+if (import.meta.env.DEV) {
+  import('vconsole').then(({ default: VConsole }) => {
+    new VConsole()
+  })
+}
 
 const app = createApp(App)
 const pinia = createPinia()
