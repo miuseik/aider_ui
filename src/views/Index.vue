@@ -230,6 +230,7 @@ import { useServoStore } from '@/stores/servo'
 import { useRobotStore } from '@/stores/robot'
 import { storeToRefs } from 'pinia'
 import { wsClient } from '@/utils/websocket'
+import { getExoCalibration, updateExoCalibration, exoZero, exoZeroChannel } from '@/api'
 
 // Router
 const router = useRouter()
@@ -493,8 +494,7 @@ const exoCalibCache = ref({})  // { channel: { pot_zero, pot_min, pot_max, angle
 // 加载外骨骼校准数据
 async function loadExoCalibration() {
   try {
-    const resp = await fetch('/api/exo/calibration')
-    const data = await resp.json()
+    const data = await getExoCalibration()
     if (data.data) {
       const cache = {}
       for (const entry of data.data) {
@@ -530,17 +530,12 @@ async function onExoZero() {
 
   exoZeroing.value = true
   try {
-    const resp = await fetch('/api/exo/zero', { method: 'POST' })
-    const data = await resp.json()
-    if (data.code === 0) {
-      ElMessage.success(`归零完成: ${data.data?.updated_channels ?? '?'} 个通道已更新`)
-      // 重新加载校准数据以更新前端显示
-      await loadExoCalibration()
-    } else {
-      ElMessage.error(data.message || '归零失败')
-    }
+    const data = await exoZero()
+    ElMessage.success(`归零完成: ${data.data?.updated_channels ?? '?'} 个通道已更新`)
+    // 重新加载校准数据以更新前端显示
+    await loadExoCalibration()
   } catch (e) {
-    ElMessage.error('归零请求失败')
+    // 失败时 axios 拦截器已弹 ElMessage，无需重复提示
     console.error('[ExoZero]', e)
   } finally {
     exoZeroing.value = false
@@ -575,16 +570,10 @@ async function onExoZeroChannel(channel) {
   exoZeroingChannels.value = next
 
   try {
-    const resp = await fetch(`/api/exo/zero/${channel}`, { method: 'POST' })
-    const data = await resp.json()
-    if (data.code === 0) {
-      ElMessage.success(`ch${channel} 归零完成: pot_zero = ${data.data?.pot_zero?.toFixed(1) ?? '?'}`)
-      await loadExoCalibration()
-    } else {
-      ElMessage.error(data.message || `ch${channel} 归零失败`)
-    }
+    const data = await exoZeroChannel(channel)
+    ElMessage.success(`ch${channel} 归零完成: pot_zero = ${data.data?.pot_zero?.toFixed(1) ?? '?'}`)
+    await loadExoCalibration()
   } catch (e) {
-    ElMessage.error(`ch${channel} 归零请求失败`)
     console.error(`[ExoZeroChannel ${channel}]`, e)
   } finally {
     const removed = new Set(exoZeroingChannels.value)
@@ -596,20 +585,10 @@ async function onExoZeroChannel(channel) {
 // 更新外骨骼单通道校准（partial update，只传修改的字段）
 async function onExoUpdateCalibration(update) {
   try {
-    const resp = await fetch('/api/exo/calibration', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(update),
-    })
-    const data = await resp.json()
-    if (data.code === 0) {
-      ElMessage.success(`ch${update.channel} 设置已保存`)
-      await loadExoCalibration()
-    } else {
-      ElMessage.error(data.message || '保存失败')
-    }
+    await updateExoCalibration(update)
+    ElMessage.success(`ch${update.channel} 设置已保存`)
+    await loadExoCalibration()
   } catch (e) {
-    ElMessage.error(`ch${update.channel} 设置保存失败`)
     console.error('[ExoUpdateCalibration]', e)
   }
 }

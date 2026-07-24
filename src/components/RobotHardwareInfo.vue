@@ -346,18 +346,10 @@ function calibratedAngle(ch, rawAngle) {
   let angle
   if (rawAngle >= cal.pot_zero) {
     const span = cal.pot_max - cal.pot_zero
-    if (span < 0.001) { angle = 0 }
-    else {
-      const ratio = Math.max(0, Math.min(1, (rawAngle - cal.pot_zero) / span))
-      angle = ratio * cal.angle_max
-    }
+    angle = span < 0.001 ? 0 : Math.max(0, Math.min(1, (rawAngle - cal.pot_zero) / span)) * cal.angle_max
   } else {
     const span = cal.pot_zero - cal.pot_min
-    if (span < 0.001) { angle = 0 }
-    else {
-      const ratio = Math.max(0, Math.min(1, (cal.pot_zero - rawAngle) / span))
-      angle = -ratio * Math.abs(cal.angle_min)
-    }
+    angle = span < 0.001 ? 0 : -Math.max(0, Math.min(1, (cal.pot_zero - rawAngle) / span)) * Math.abs(cal.angle_min)
   }
   if (cal.reverse) angle = -angle
   return angle

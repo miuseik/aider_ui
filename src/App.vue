@@ -4,7 +4,7 @@
 
 <script setup>
 import { onMounted, onUnmounted, reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { wsClient } from './utils/websocket'
 import { useServoStore } from '@/stores/servo'
 import { useRobotStore } from '@/stores/robot'
@@ -22,6 +22,41 @@ let globalWsUnsubscribe = null
 // 保存 setTimeout ID 用于清理
 let poseRetryTimer = null
 
+// === Terminal 重启检测 ===
+// /api/status 返回 terminal_started_at（Terminal 进程启动时间戳），
+// 值变化说明 Terminal 被 Docker 重新拉起（掉电自动重启 / 手动点重启），弹确认框告知用户。
+let lastTerminalStartedAt = null
+let restartNoticeShowing = false
+let restartCheckInterval = null
+
+async function checkTerminalRestart() {
+  try {
+    const resp = await fetch('/api/status')
+    if (!resp.ok) return
+    const result = await resp.json()
+    const data = result.data || result
+    const startedAt = data.terminal_started_at
+    if (!startedAt) return
+    if (lastTerminalStartedAt === null) {
+      // 首次记录基线，不弹窗
+      lastTerminalStartedAt = startedAt
+      return
+    }
+    if (startedAt !== lastTerminalStartedAt) {
+      lastTerminalStartedAt = startedAt
+      if (restartNoticeShowing) return
+      restartNoticeShowing = true
+      ElMessageBox.alert(
+        '机器人控制端已重启（电机掉电自动重启或手动重启）。\n\n机器人已断开连接，如需继续控制请重新点击「连接」。',
+        '🔄 Terminal 已重启',
+        { confirmButtonText: '知道了', type: 'warning' }
+      ).finally(() => { restartNoticeShowing = false })
+    }
+  } catch (e) {
+    console.error('[App] Terminal 重启检测轮询失败:', e.message || e)
+  }
+}
+
 onMounted(() => {
   // 全局初始化 WebSocket
   wsClient.connect()
@@ -36,6 +71,10 @@ onMounted(() => {
   
   // 保存 interval ID 以便清理
   window.__wsCheckInterval = checkInterval
+
+  // Terminal 重启检测：每 3s 轮询 /api/status 的 terminal_started_at
+  checkTerminalRestart()
+  restartCheckInterval = setInterval(checkTerminalRestart, 3000)
 
   // === 应用初始化：预加载舵机 ID 配置到 Pinia ===
   const servoStore = useServoStore()
@@ -111,6 +150,10 @@ onUnmounted(() => {
   // 清理定时器
   if (window.__wsCheckInterval) {
     clearInterval(window.__wsCheckInterval)
+  }
+  if (restartCheckInterval) {
+    clearInterval(restartCheckInterval)
+    restartCheckInterval = null
   }
   if (poseRetryTimer) {
     clearTimeout(poseRetryTimer)

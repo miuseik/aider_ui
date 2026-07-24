@@ -44,11 +44,13 @@ import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
 import { useRobotStore } from '../stores/robot.js'
+import { exoZero, getExoCalibration } from '@/api'
 import WebrtcVideo from '../components/WebrtcVideo.vue'
 
 const route = useRoute()
 const sceneRef = ref(null)
 const webrtcRef = ref(null)
+const robotStore = useRobotStore()
 
 // ========== 节流常量 (ms) ==========
 const WS_SEND_INTERVAL = 33     // WebSocket 发送 ~30fps
@@ -72,6 +74,27 @@ let rightGripDown = false
 let leftTriggerDown = false
 let rightTriggerDown = false
 let rightAButtonPrev = false  // 右手柄 A 键(buttons[4])边沿检测用
+let rightBButtonPrev = false  // 右手柄 B 键(buttons[5])边沿检测用
+let leftXButtonPrev = false   // 左手柄 X 键(buttons[4]) → goto zero pose
+let exoZeroFeedback = null    // B键归零结果 { text, ok, time }，面板短暂显示
+
+// === 外骨骼 16 路数据（面板显示用，与首页同源）===
+let exoAngles = []           // 最新一帧 exo_data.joints（原始电位器角度）
+let exoCalibration = {}      // channel → 校准配置（/api/exo/calibration）
+let exoDataUnsub = null      // WS 监听取消函数
+
+async function loadExoCalibration() {
+  try {
+    const data = await getExoCalibration()
+    const cache = {}
+    for (const entry of (data.data || [])) {
+      cache[entry.channel] = entry
+    }
+    exoCalibration = cache
+  } catch (e) {
+    console.warn('[VrScene] 加载外骨骼校准失败:', e)
+  }
+}
 
 let leftGripInitialRotation = null
 let rightGripInitialRotation = null
@@ -104,6 +127,12 @@ function cacheButtonNames() {
 }
 
 onMounted(() => {
+  // 外骨骼：加载校准配置 + 监听 server 广播的 exo_data（与首页同源）
+  loadExoCalibration()
+  exoDataUnsub = wsClient.onMessage((data) => {
+    if (data.type === 'exo_data') exoAngles = data.joints || []
+  })
+
   // 等待 A-Frame scene 真正加载完成，而非硬编码 500ms
   const aframeScene = document.querySelector('a-scene')
   if (aframeScene && aframeScene.hasLoaded) {
@@ -140,6 +169,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (exoDataUnsub) {
+    exoDataUnsub()
+    exoDataUnsub = null
+  }
   if (sceneEl && sceneEl.renderer) {
     sceneEl.renderer.setAnimationLoop(null)
   }
@@ -279,8 +312,8 @@ function setupEventListeners() {
     sendGripRelease('right')
   })
 
-  // 注意: A 键(右手柄 buttons[4])外骨骼启停已移至 onVrTick 内的 checkExoToggle() 做边沿检测，
-  // 不再依赖 a-frame 的 'abuttondown' 事件（部分头显/浏览器不触发该事件，导致按 A 无反应）。
+  // 注意: A 键(buttons[4])/B 键(buttons[5])已移至 onVrTick 内的 checkExoButtons() 做边沿检测，
+  // 不再依赖 a-frame 的 'abuttondown' 事件（部分头显/浏览器不触发该事件，导致按键无反应）。
 }
 
 function cleanupEventListeners() {
@@ -460,22 +493,67 @@ function setupRendererAnimationLoop(retryCount = 0) {
   console.log('[VrScene] data-panel-updater 组件已注册')
 }
 
-function checkExoToggle(vrData) {
-  // 右手柄 A 键 = buttons[4]（见 utils/vrData.js getButtonName 的 rightSpecific[4]='A键'）
-  if (!vrData || !vrData.rightController) return
-  const aBtn = (vrData.rightController.buttons || []).find(b => b.index === 4)
-  const pressed = !!(aBtn && aBtn.pressed)
+async function callExoZero() {
+  // B 键 → POST /api/exo/zero（与首页"一键归零"同一接口：当前 raw 角度写入 pot_zero）
+  // 走 @/api 的 axios 封装：code===200 直接 resolve，失败时拦截器已弹 ElMessage 并 reject
+  try {
+    const data = await exoZero()
+    exoZeroFeedback = { text: `🎯 归零完成: ${data.data?.updated_channels ?? '?'}通道`, ok: true, time: performance.now() }
+    // pot_zero 已变，await 重载校准保证面板显示的角度准确
+    await loadExoCalibration()
+    console.log('[VrScene] 归零后校准已刷新, 当前通道角度应为 0')
+  } catch (e) {
+    exoZeroFeedback = { text: `归零失败: ${e.message || '请求失败'}`, ok: false, time: performance.now() }
+    console.error('[VrScene] B键归零请求失败:', e)
+  }
+  console.log('[VrScene] B键(右手柄) → /api/exo/zero:', exoZeroFeedback.text)
+}
+
+function checkExoButtons(vrData) {
+  if (!vrData) return
+
+  // ---- 左手柄 X 键(buttons[4]): 归零姿态 (goto_pose zero) ----
+  if (vrData.leftController) {
+    const leftButtons = vrData.leftController.buttons || []
+    const xPressed = !!leftButtons.find(b => b.index === 4)?.pressed
+    if (xPressed && !leftXButtonPrev) {
+      wsClient.send({ type: 'api_command', action: 'goto_pose', arm: 'both', pose_name: 'zero' })
+      robotStore.setCurrentPoseName('zero')
+      console.log('[VrScene] X键(左手柄) → goto_pose zero')
+    }
+    leftXButtonPrev = xPressed
+  }
+
+  // 右手柄 A 键 = buttons[4], B 键 = buttons[5]（见 utils/vrData.js getButtonName 的 rightSpecific）
+  if (!vrData.rightController) return
+  const buttons = vrData.rightController.buttons || []
+
+  // ---- A 键: 未启用 → 进入"外骨骼+VR"并直接开启; 已启用 → 暂停控制 ----
   // 仅在按下上升沿触发一次（避免长按每帧重复 toggle 来回跳）
-  if (pressed && !rightAButtonPrev) {
-    const store = useRobotStore()
-    if (store.controlMode === 'exo_vr_mixed') {
+  const aPressed = !!buttons.find(b => b.index === 4)?.pressed
+  if (aPressed && !rightAButtonPrev) {
+    if (robotStore.controlMode === 'exo_vr_mixed' && robotStore.exoActive) {
       wsClient.send({ type: 'exo_toggle' })
-      console.log('[VrScene] A键(右手柄) → exo_toggle')
+      console.log('[VrScene] A键 → 暂停外骨骼控制')
     } else {
-      console.log('[VrScene] A键忽略：当前非 exo_vr_mixed 模式')
+      // 服务端按 WS 消息顺序处理：先切模式再启用，无竞态
+      if (robotStore.controlMode !== 'exo_vr_mixed') {
+        wsClient.send({ type: 'set_control_mode', mode: 'exo_vr_mixed' })
+      }
+      if (!robotStore.exoActive) {
+        wsClient.send({ type: 'exo_toggle' })
+      }
+      console.log('[VrScene] A键 → 进入外骨骼+VR 并启用')
     }
   }
-  rightAButtonPrev = pressed
+  rightAButtonPrev = aPressed
+
+  // ---- B 键: 外骨骼关节角度一键归零 ----
+  const bPressed = !!buttons.find(b => b.index === 5)?.pressed
+  if (bPressed && !rightBButtonPrev) {
+    callExoZero()
+  }
+  rightBButtonPrev = bPressed
 }
 
 function onVrTick(scene) {
@@ -503,11 +581,11 @@ function onVrTick(scene) {
   // ---- 手柄姿态计算（轻量，每帧执行）----
   updateRelativeRotation()
 
-  // ---- 每帧取一次 VR 数据（A 键边沿检测 + 节流发送/面板共用）----
+  // ---- 每帧取一次 VR 数据（A/B 键边沿检测 + 节流发送/面板共用）----
   const vrData = getFullVRData(scene, frame)
 
-  // ---- A 键(右手柄 buttons[4])外骨骼启停：独立于握把，每帧边沿检测 ----
-  checkExoToggle(vrData)
+  // ---- A 键(buttons[4])外骨骼模式/启停 + B 键(buttons[5])一键归零：独立于握把，每帧边沿检测 ----
+  checkExoButtons(vrData)
 
   // ---- VR 数据采集 + WS 发送（节流 ~30fps）----
   if (now - lastWsSendTime >= WS_SEND_INTERVAL) {
@@ -571,6 +649,86 @@ function updateRelativeRotation() {
   if (shouldUpdateText) lastTextUpdateTime = now
 }
 
+// ---- 外骨骼校准角度计算（与 terminal exo_handler._apply_calibration 公式一致）----
+// 中点模式: 正方向 span=pot_max-pot_zero, 负方向 span=pot_zero-pot_min
+function exoCalibratedAngle(ch, rawAngle) {
+  const cal = exoCalibration[ch]
+  if (!cal || cal.pot_zero == null) return rawAngle
+  let angle
+  if (rawAngle >= cal.pot_zero) {
+    const span = cal.pot_max - cal.pot_zero
+    angle = span < 0.001 ? 0 : Math.max(0, Math.min(1, (rawAngle - cal.pot_zero) / span)) * cal.angle_max
+  } else {
+    const span = cal.pot_zero - cal.pot_min
+    angle = span < 0.001 ? 0 : -Math.max(0, Math.min(1, (cal.pot_zero - rawAngle) / span)) * Math.abs(cal.angle_min)
+  }
+  return cal.reverse ? -angle : angle
+}
+
+// ---- 外骨骼 16 路面板显示（左右臂两列，与首页一致：正绿/负红 + 双向条）----
+function displayExoData(ctx, canvas) {
+  const cx = canvas.width / 2
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#00ff88'
+  ctx.font = 'bold 24px monospace'
+  ctx.fillText('◈ EXO 关节角度 ◈', cx, 290)
+
+  const channels = Object.keys(exoCalibration).map(Number).sort((a, b) => a - b)
+  if (!channels.length || !exoAngles.length) {
+    ctx.fillStyle = '#666666'
+    ctx.font = '20px monospace'
+    ctx.fillText('无外骨骼数据', cx, 322)
+    return
+  }
+
+  // 与首页一致：只显示校准配置里的通道，左臂一列、右臂一列，按 joint_index 排序
+  const byArm = (arm) => channels
+    .filter(ch => (exoCalibration[ch]?.arm || '') === arm)
+    .sort((a, b) => (exoCalibration[a]?.joint_index ?? 99) - (exoCalibration[b]?.joint_index ?? 99))
+  const columns = [
+    { title: '左臂', channels: byArm('left'), x: cx - 330 },
+    { title: '右臂', channels: byArm('right'), x: cx + 40 },
+  ]
+
+  for (const col of columns) {
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#00ffcc'
+    ctx.font = 'bold 20px monospace'
+    ctx.fillText(col.title, col.x, 318)
+    let y = 344
+    for (const ch of col.channels) {
+      const cal = exoCalibration[ch]
+      const raw = ch < exoAngles.length ? exoAngles[ch] : null
+      const has = raw != null
+      const ca = has ? exoCalibratedAngle(ch, raw) : 0
+      const name = `${cal.joint_name || 'ch' + ch}`
+      // 名称
+      ctx.fillStyle = has ? '#cccccc' : '#555555'
+      ctx.font = '18px monospace'
+      ctx.fillText(name, col.x, y)
+      // 双向条：中点=零位(白线)，右半=正(绿)，左半=负(红)
+      const barX = col.x + 130, barW = 110, barY = y - 12, barH = 10
+      ctx.fillStyle = '#333333'
+      ctx.fillRect(barX, barY, barW, barH)
+      if (has) {
+        const range = Math.abs(cal.angle_max || 0) + Math.abs(cal.angle_min || 0)
+        const pct = range < 0.001 ? 0.5 : (ca - (cal.angle_min || 0)) / range  // 0..1
+        const midX = barX + barW / 2
+        const valX = barX + Math.max(0, Math.min(1, pct)) * barW
+        ctx.fillStyle = ca >= 0 ? '#00ff66' : '#ff5544'
+        ctx.fillRect(Math.min(midX, valX), barY, Math.abs(valX - midX), barH)
+      }
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(barX + barW / 2 - 1, barY - 2, 2, barH + 4)  // 零位白线
+      // 校准后角度
+      ctx.fillStyle = !has ? '#555555' : (ca >= 0 ? '#00ff66' : '#ff5544')
+      ctx.font = 'bold 18px monospace'
+      ctx.fillText(has ? `${ca >= 0 ? '+' : ''}${ca.toFixed(1)}°` : '--', col.x + 250, y)
+      y += 26
+    }
+  }
+}
+
 function updateDataPanelInFrame(vrData) {
   if (!dataPanelContext || !dataPanelTexture) return
   const ctx = dataPanelContext
@@ -609,6 +767,27 @@ function updateDataPanelInFrame(vrData) {
   ctx.font = '24px monospace'
   ctx.fillText('POS: ' + headsetPos, canvas.width / 2, 122)
   ctx.fillText('ROT: ' + headsetRot, canvas.width / 2, 150)
+
+  // ---- 控制模式 + 外骨骼启用状态（与首页一致）----
+  ctx.textAlign = 'center'
+  const modeLabel = { keyboard: '键盘', pure_vr: '纯VR', exo_vr_mixed: '外骨骼+VR' }[robotStore.controlMode] || robotStore.controlMode
+  ctx.fillStyle = '#ffcc00'
+  ctx.font = 'bold 26px monospace'
+  ctx.fillText(`模式: ${modeLabel}`, canvas.width / 2, 188)
+  if (robotStore.controlMode === 'exo_vr_mixed') {
+    ctx.fillStyle = robotStore.exoActive ? '#00ff66' : '#ffaa00'
+    ctx.fillText(robotStore.exoActive ? '🦴 外骨骼已启用' : '🦴 外骨骼已暂停', canvas.width / 2, 220)
+  }
+  // ---- B键归零结果（3 秒短暂显示）----
+  if (exoZeroFeedback && performance.now() - exoZeroFeedback.time < 3000) {
+    ctx.fillStyle = exoZeroFeedback.ok ? '#00ff66' : '#ff4444'
+    ctx.font = 'bold 24px monospace'
+    ctx.fillText(exoZeroFeedback.text, canvas.width / 2, 254)
+  }
+
+  // ---- 外骨骼 16 路关节角度（左右臂两列，面板中央下方）----
+  displayExoData(ctx, canvas)
+
   displayControllerData(ctx, canvas, vrData?.leftController, 'left', 50)
   displayControllerData(ctx, canvas, vrData?.rightController, 'right', canvas.width - 50)
   dataPanelTexture.needsUpdate = true
