@@ -16,7 +16,7 @@
             <button class="step-btn" @click="stepAngle(servo.servoId, -1)" title="-1°">◀</button>
             <input type="range" :value="getAngle(servo.servoId)"
               @input="e => { setAngle(servo.servoId, +e.target.value); updateAngle(servo.servoId) }"
-              min="-180" max="180" class="slider" />
+              min="-180" max="180" class="slider" :style="sliderStyle(servo.servoId)" />
             <button class="step-btn" @click="stepAngle(servo.servoId, 1)" title="+1°">▶</button>
           </div>
           <div class="input-row">
@@ -124,6 +124,15 @@ const getAngle = (servoId) => {
 // 设置角度（用户拖动滑块）
 const setAngle = (servoId, value) => {
   userAngleMap.value.set(servoId, value)
+}
+
+/** 滑块颜色：值越大越红（0°=绿, 满量程=红） */
+const sliderStyle = (servoId) => {
+  const angle = getAngle(servoId)
+  const intensity = Math.min(Math.abs(angle) / 180, 1)
+  const hue = Math.round((1 - intensity) * 140)
+  const color = `hsl(${hue}, 80%, 50%)`
+  return { accentColor: color, '--slider-color': color }
 }
 
 // 箭头微调：按步长增减角度
@@ -325,10 +334,11 @@ function fmtOffset(val) {
 .slider {
   width: 100%; height: 4px; border-radius: 2px; background: #2d3139;
   outline: none; -webkit-appearance: none; cursor: pointer;
+  accent-color: #3b82f6;
 }
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none; width: 11px; height: 11px;
-  border-radius: 50%; background: #3b82f6; cursor: pointer;
+  border-radius: 50%; background: var(--slider-color, #3b82f6); cursor: pointer;
 }
 
 /* 行3：精确输入 */

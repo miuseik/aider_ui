@@ -77,11 +77,16 @@
 
     <!-- 扫描结果 -->
     <div class="card result-card">
-      <div class="result-header">
+      <div class="result-header" @click="showResults = !showResults" :class="{ collapsed: !showResults }">
         <h3>📊 扫描结果</h3>
-        <span class="count-badge">{{ foundServos.length }} 个舵机</span>
+        <div class="result-header-right">
+          <span class="count-badge">{{ foundServos.length }} 个舵机</span>
+          <span class="chevron" :class="{ open: showResults }">▾</span>
+        </div>
       </div>
 
+      <div class="result-body-wrapper" :class="{ collapsed: !showResults }">
+        <div class="result-body">
       <div v-if="foundServos.length === 0 && !scanning" class="empty-state">
         <div class="icon">🤖</div>
         <p>未找到舵机，请检查连接后重新扫描</p>
@@ -159,6 +164,8 @@
               </div>
             </el-col>
           </el-row>
+        </div>
+      </div>
         </div>
       </div>
     </div>
@@ -244,6 +251,8 @@ const startId = ref(1)
 const endId = ref(50)
 const scanning = ref(false)
 const currentScanId = ref(0)
+// 扫描结果抽屉是否展开（默认合上）
+const showResults = ref(false)
 
 // 机器人配置（从 Pinia 读取，App.vue 初始化时已加载）
 const robotConfig = computed(() => servoStore.servoIdConfig)
@@ -849,6 +858,8 @@ const scanServos = async () => {
     foundServos.value = allFoundServos
     // 更新 Pinia 状态
     servoStore.setScannedServos(allFoundServos)
+    // 扫描出结果后自动展开抽屉
+    showResults.value = true
     ElMessage.success(`扫描完成，在 ${portsToScan.length} 个端口中共找到 ${allFoundServos.length} 个舵机`)
     
     // 读取所有舵机的实际位置
@@ -1189,6 +1200,43 @@ const refreshPorts = async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.result-header.collapsed {
+  margin-bottom: 0;
+}
+
+.result-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chevron {
+  color: #8b92a8;
+  font-size: 14px;
+  transition: transform 0.3s ease;
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+.result-body-wrapper {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.result-body-wrapper.collapsed {
+  grid-template-rows: 0fr;
+}
+
+.result-body {
+  overflow: hidden;
+  min-height: 0;
 }
 
 .count-badge {
