@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "ui-dev": "vite",
     "home": "vite --mode development_home",
     "pro": "vite --mode production",
     "build": "vite build",
