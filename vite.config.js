@@ -30,7 +30,8 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, path.resolve(__dirname, 'env'), '')
+  // 仅加载 VITE_ 前缀变量，避免空前缀扫描到 .env.production 等其它环境文件
+  const env = loadEnv(mode, path.resolve(__dirname, 'env'), 'VITE_')
   
   return {
     plugins: [vue()],

@@ -67,30 +67,39 @@ export function useKeyboard(isRobotEngaged, showConnectionWarning) {
     }
   }
 
+  // 带修饰键的组合键（Ctrl/Cmd/Alt）属于浏览器/系统快捷键（如 Ctrl+R 刷新、
+  // Ctrl+W 关页、Ctrl+T 新标签、Alt+Tab 切换），一律放行，不拦截、不发送机器人指令
+  function hasModifier(event) {
+    return event.ctrlKey || event.metaKey || event.altKey
+  }
+
   function handleKeyDown(event) {
-    if (isControlKey(event.code)) {
-      event.preventDefault()
-    }
+    // 组合键直接放行，保证浏览器原生快捷键可用
+    if (hasModifier(event)) return
 
-    if (!isKeyboardEnabled.value || pressedKeys.has(event.code)) return
+    // 仅在键盘控制已启用时，才拦截单键控制键并发送指令
+    if (!isKeyboardEnabled.value) return
+    if (!isControlKey(event.code)) return
 
-    if (isControlKey(event.code)) {
-      pressedKeys.add(event.code)
-      sendKeyCommand(event.code, 'press')
-    }
+    // 避免操作系统默认行为（如方向键滚动、Tab 跳焦、空格等）干扰机器人控制
+    event.preventDefault()
+
+    if (pressedKeys.has(event.code)) return
+    pressedKeys.add(event.code)
+    sendKeyCommand(event.code, 'press')
   }
 
   function handleKeyUp(event) {
-    if (isControlKey(event.code)) {
-      event.preventDefault()
-    }
-    
-    if (!isKeyboardEnabled.value || !pressedKeys.has(event.code)) return
-    
-    if (isControlKey(event.code)) {
-      pressedKeys.delete(event.code)
-      sendKeyCommand(event.code, 'release')
-    }
+    // 组合键直接放行
+    if (hasModifier(event)) return
+
+    if (!isKeyboardEnabled.value || !isControlKey(event.code)) return
+
+    event.preventDefault()
+
+    if (!pressedKeys.has(event.code)) return
+    pressedKeys.delete(event.code)
+    sendKeyCommand(event.code, 'release')
   }
 
   return {

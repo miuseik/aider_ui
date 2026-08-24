@@ -83,6 +83,14 @@ onMounted(() => {
   // === 全局机器人状态监听（跨页面持久化） ===
   const robotStore = useRobotStore()
   globalWsUnsubscribe = wsClient.onMessage((data) => {
+    // WS 连接成功（页面加载 / 断线重连后）→ 立即拉取姿态列表。
+    // 不依赖 robot_hardware_info（真机未连接时不会推送，会导致姿态下拉框一直为空）
+    if (data.type === 'connected') {
+      if (Object.keys(robotStore.poseList).length === 0) {
+        robotStore.setPoseLoading(true)
+        wsClient.send({ type: 'api_command', action: 'list_poses' })
+      }
+    }
     // 连接/断开的明确响应（终端扫描硬件后回执，驱动按钮真实状态）
     if (data.type === 'robot_connect_response') {
       if (data.success) {
@@ -136,14 +144,14 @@ onMounted(() => {
     }
   })
 
-  // WebSocket 重连后，如果之前机器人已连接，延迟重试姿态同步
-  // （避免重连瞬间 Terminal 还没 ready）
-  poseRetryTimer = setTimeout(() => {
+  // 姿态列表持续重试：WS 连上且姿态列表为空时周期重拉
+  // （覆盖断线重连 / Terminal 重启后未就绪，直到拿到数据为止）
+  poseRetryTimer = setInterval(() => {
     if (wsClient.isConnected && Object.keys(robotStore.poseList).length === 0) {
       robotStore.setPoseLoading(true)
       wsClient.send({ type: 'api_command', action: 'list_poses' })
     }
-  }, 3000)
+  }, 5000)
 })
 
 onUnmounted(() => {
@@ -156,7 +164,7 @@ onUnmounted(() => {
     restartCheckInterval = null
   }
   if (poseRetryTimer) {
-    clearTimeout(poseRetryTimer)
+    clearInterval(poseRetryTimer)
     poseRetryTimer = null
   }
   // 取消全局 WebSocket 消息监听

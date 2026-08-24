@@ -10,6 +10,7 @@ class WSTransport {
     this.maxReconnectAttempts = 10
     this.reconnectAttempts = 0
     this.onMessageCallback = null
+    this.onOpenCallback = null
     this.isConnected = false
   }
 
@@ -29,6 +30,8 @@ class WSTransport {
         console.log('✅ WebSocket 连接成功')
         this.isConnected = true
         this.reconnectAttempts = 0
+        // 连接真正建立后通知业务层（身份认证、拉取姿态列表等都依赖此事件）
+        if (this.onOpenCallback) this.onOpenCallback()
       }
 
       this.ws.onmessage = (event) => {
@@ -87,6 +90,10 @@ class WSTransport {
 
   onMessage(callback) {
     this.onMessageCallback = callback
+  }
+
+  onOpen(callback) {
+    this.onOpenCallback = callback
   }
 
   getState() {
