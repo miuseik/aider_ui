@@ -31,6 +31,11 @@
       </a-entity>
 
       <a-entity id="dataPanel" position="0 -0.2 -1.5" rotation="-15 0 0"></a-entity>
+      <a-entity id="recMenu" position="0 0.35 -1.5" rotation="-15 0 0" visible="false"></a-entity>
+      <a-entity id="recIndicator" position="0.55 0.55 -1.5" visible="false">
+        <a-text value="● REC" color="#ff3b3b" align="right" width="1.2" position="0 0 0.01"></a-text>
+        <a-text :value="recElapsedText" color="#ffffff" align="right" width="0.9" position="0 -0.12 0.01"></a-text>
+      </a-entity>
       <a-entity id="videoScreen" position="0 1.2 -2" rotation="0 0 0"></a-entity>
     </a-scene>
   </div>
@@ -77,6 +82,23 @@ let rightAButtonPrev = false  // 右手柄 A 键(buttons[4])边沿检测用
 let rightBButtonPrev = false  // 右手柄 B 键(buttons[5])边沿检测用
 let leftXButtonPrev = false   // 左手柄 X 键(buttons[4]) → goto zero pose
 let exoZeroFeedback = null    // B键归零结果 { text, ok, time }，面板短暂显示
+
+// === VR 动作录制菜单状态 ===
+let recMenuMesh = null
+let recMenuContext = null
+let recMenuTexture = null
+let recMenuVisible = false             // Menu 键开关
+let recMenuItems = []                  // 当前菜单项 [{ label, action, payload }]
+let recMenuSel = 0                     // 当前高亮项索引
+let recMenuSelDirty = true             // 需要重绘
+let recTypeSel = 'target'              // 录制类型单选: target(记录目标) | joint(记录关节)
+let recMenuLeftButtonPrev = {}         // 边沿检测缓存
+let recYButtonPrev = false
+let recYLongPressStart = 0             // Y 键长按计时起点
+let recYLongFired = false
+let recYActive = false                 // 本地录制状态（前端自管，不依赖终端 status 回传）
+let recElapsedText = ref('0.0s')       // REC 计时显示
+let recStartTime = 0                   // 本次录制开始时刻
 
 // === 外骨骼 16 路数据（面板显示用，与首页同源）===
 let exoAngles = []           // 最新一帧 exo_data.joints（原始电位器角度）
@@ -163,6 +185,7 @@ onMounted(() => {
     console.log('[VrScene] 初始化开始...')
     initControllerUpdater()
     initDataPanel()
+    initRecMenu()
     initVideoScreen()
     setupRendererAnimationLoop()
   }
@@ -392,6 +415,80 @@ function initDataPanel() {
   })
 }
 
+function initRecMenu() {
+  const entity = document.querySelector('#recMenu')
+  if (!entity) return
+  const canvas = document.createElement('canvas')
+  canvas.width = 1024
+  canvas.height = 768
+  recMenuContext = canvas.getContext('2d')
+  recMenuTexture = new THREE.CanvasTexture(canvas)
+  recMenuTexture.minFilter = THREE.LinearFilter
+  recMenuTexture.magFilter = THREE.LinearFilter
+
+  const geometry = new THREE.PlaneGeometry(1.6, 1.2)
+  const material = new THREE.MeshBasicMaterial({
+    map: recMenuTexture, side: THREE.DoubleSide, transparent: true,
+    depthTest: false, depthWrite: false
+  })
+  recMenuMesh = new THREE.Mesh(geometry, material)
+  recMenuMesh.renderOrder = 1001
+  entity.object3D.add(recMenuMesh)
+  recMenuSelDirty = true
+}
+
+function buildRecMenuItems() {
+  // 菜单项: 顶部两个单选录制类型 + 下方动作列表(播放/改名)
+  const items = []
+  items.push({ label: '① 记录目标(纯VR) — Y开始', action: 'start', payload: 'target' })
+  items.push({ label: '② 记录关节(VR+外骨骼) — Y开始', action: 'start', payload: 'joint' })
+  // 动作列表
+  const recs = robotStore.recordings || []
+  if (recs.length === 0) {
+    items.push({ label: '  (暂无录制)', action: 'none' })
+  } else {
+    recs.forEach((r, i) => {
+      const tag = r.rec_type === 'joint' ? '[关节]' : '[目标]'
+      items.push({ label: `▶ ${r.name} ${tag} ${r.frames}f`, action: 'play', payload: r.name, rec_type: r.rec_type })
+    })
+  }
+  recMenuItems = items
+  if (recMenuSel >= items.length) recMenuSel = 0
+}
+
+function drawRecMenu() {
+  if (!recMenuContext || !recMenuTexture) return
+  const ctx = recMenuContext
+  const canvas = recMenuTexture.image
+  ctx.fillStyle = 'rgba(0,0,0,0.88)'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.strokeStyle = '#00ff88'
+  ctx.lineWidth = 6
+  ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16)
+
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 44px sans-serif'
+  ctx.fillText('VR 动作录制菜单', 40, 60)
+  ctx.font = '28px sans-serif'
+  ctx.fillStyle = '#88ffcc'
+  ctx.fillText('Menu键开关 | 右摇杆选择 | Y键开始录制', 40, 100)
+
+  const baseY = 150
+  const lineH = 56
+  recMenuItems.forEach((it, i) => {
+    if (i === recMenuSel) {
+      ctx.fillStyle = 'rgba(0,255,136,0.25)'
+      ctx.fillRect(20, baseY + i * lineH - 6, canvas.width - 40, lineH)
+      ctx.fillStyle = '#00ff88'
+    } else {
+      ctx.fillStyle = '#cccccc'
+    }
+    ctx.font = (i === recMenuSel ? 'bold ' : '') + '34px sans-serif'
+    ctx.fillText(it.label, 40, baseY + i * lineH + 30)
+  })
+  recMenuTexture.needsUpdate = true
+}
+
 function initVideoScreen() {
   if (!videoScreenEntity) return
 
@@ -556,6 +653,119 @@ function checkExoButtons(vrData) {
   rightBButtonPrev = bPressed
 }
 
+// ========== VR 动作录制菜单交互 ==========
+function sendRecCommand(cmd) {
+  wsClient.send(Object.assign({ type: 'rec_command' }, cmd))
+}
+
+function checkRecButtons(vrData, now) {
+  if (!vrData) return
+  const left = vrData.leftController
+  const right = vrData.rightController
+  const leftButtons = (left && left.buttons) || []
+  const rightButtons = (right && right.buttons) || []
+
+  // ---- 左手柄 Menu 键 (buttons[12]): 开关录制菜单 ----
+  const menuPressed = !!leftButtons.find(b => b.index === 12)?.pressed
+  if (menuPressed && !recMenuLeftButtonPrev.menu) {
+    recMenuVisible = !recMenuVisible
+    const ent = document.querySelector('#recMenu')
+    if (ent) ent.setAttribute('visible', recMenuVisible ? 'true' : 'false')
+    if (recMenuVisible) {
+      buildRecMenuItems()
+      recMenuSelDirty = true
+    }
+    console.log(`[VrScene] Menu键 → 录制菜单 ${recMenuVisible ? '显示' : '隐藏'}`)
+  }
+  recMenuLeftButtonPrev.menu = menuPressed
+
+  if (!recMenuVisible) {
+    // 菜单隐藏时，Y 键仍可直接录制/播放（按当前 recTypeSel）
+    handleYButton(leftButtons, now, true)
+    return
+  }
+
+  // ---- 菜单显示时: 右摇杆 X 轴导航 ----
+  const joy = (right && right.joystick) || { x: 0, y: 0 }
+  if (joy.x > 0.6 && !recMenuLeftButtonPrev.rJoyR) {
+    recMenuSel = Math.min(recMenuSel + 1, recMenuItems.length - 1)
+    recMenuSelDirty = true
+  }
+  if (joy.x < -0.6 && !recMenuLeftButtonPrev.rJoyL) {
+    recMenuSel = Math.max(recMenuSel - 1, 0)
+    recMenuSelDirty = true
+  }
+  recMenuLeftButtonPrev.rJoyR = joy.x > 0.6
+  recMenuLeftButtonPrev.rJoyL = joy.x < -0.6
+
+  // ---- 菜单显示时: 左手 Y 键 (buttons[5]) 确认选中项 ----
+  const yPressed = !!leftButtons.find(b => b.index === 5)?.pressed
+  if (yPressed && !recMenuLeftButtonPrev.lY) {
+    const item = recMenuItems[recMenuSel]
+    if (item && item.action === 'start') {
+      // 选中录制类型项 → 设置类型并立即开始录制
+      recTypeSel = item.payload
+      const name = `rec_${Date.now()}`
+      sendRecCommand({ action: 'start', rec_type: recTypeSel, name })
+      recYActive = true
+      recStartTime = now
+      console.log(`[VrScene] 菜单确认 → 开始录制: ${name} (${recTypeSel})`)
+      // 开始录制后自动收起菜单，作为明确反馈
+      recMenuVisible = false
+      const ent = document.querySelector('#recMenu')
+      if (ent) ent.setAttribute('visible', 'false')
+    } else if (item && item.action === 'play') {
+      sendRecCommand({ action: 'play', name: item.payload, rec_type: item.rec_type })
+      console.log(`[VrScene] 播放录制: ${item.payload}`)
+    }
+    buildRecMenuItems()
+  }
+  recMenuLeftButtonPrev.lY = yPressed
+
+  // 菜单显示时 Y 键用作确认，不抢录制/播放
+}
+
+function handleYButton(leftButtons, now, allowDirect) {
+  const yPressed = !!leftButtons.find(b => b.index === 5)?.pressed
+  if (yPressed && !recYButtonPrev) {
+    // 上升沿：开始长按计时
+    recYLongPressStart = now
+    recYLongFired = false
+  }
+  if (yPressed && !recYLongFired && now - recYLongPressStart > 800) {
+    // 长按：播放最近一次录制（仅在允许且未在录制时）
+    if (allowDirect && !recYActive) {
+      const recs = robotStore.recordings || []
+      if (recs.length > 0) {
+        const last = recs[recs.length - 1]
+        const ptype = last.rec_type || recTypeSel
+        sendRecCommand({ action: 'play', name: last.name, rec_type: ptype })
+        console.log(`[VrScene] Y键长按 → 播放: ${last.name} (${ptype})`)
+      } else {
+        console.log('[VrScene] Y键长按 → 无录制可播放')
+      }
+    }
+    recYLongFired = true
+  }
+  if (!yPressed && recYButtonPrev) {
+    // 下降沿：短按 = 开始/结束录制
+    if (!recYLongFired) {
+      if (recYActive) {
+        sendRecCommand({ action: 'stop' })
+        recYActive = false
+        console.log('[VrScene] Y键短按 → 结束录制')
+      } else if (allowDirect) {
+        const name = `rec_${Date.now()}`
+        sendRecCommand({ action: 'start', rec_type: recTypeSel, name })
+        recYActive = true
+        recStartTime = now
+        console.log(`[VrScene] Y键短按 → 开始录制: ${name} (${recTypeSel})`)
+      }
+    }
+  }
+  recYButtonPrev = yPressed
+}
+
 function onVrTick(scene) {
   // 防御：scene 可能为 null（组件卸载过程中 tick 仍可能被调用）
   if (!scene) return
@@ -587,6 +797,9 @@ function onVrTick(scene) {
   // ---- A 键(buttons[4])外骨骼模式/启停 + B 键(buttons[5])一键归零：独立于握把，每帧边沿检测 ----
   checkExoButtons(vrData)
 
+  // ---- Menu键开关录制菜单 + Y键录制 + 右摇杆导航 ----
+  checkRecButtons(vrData, now)
+
   // ---- VR 数据采集 + WS 发送（节流 ~30fps）----
   if (now - lastWsSendTime >= WS_SEND_INTERVAL) {
     sendVRData(vrData)
@@ -597,6 +810,26 @@ function onVrTick(scene) {
   if (now - lastPanelRedrawTime >= PANEL_REDRAW_INTERVAL) {
     updateDataPanelInFrame(vrData)
     lastPanelRedrawTime = now
+  }
+
+  // ---- 录制菜单重绘（高亮变化或状态变化时）----
+  if (recMenuVisible) {
+    if (recMenuSelDirty) {
+      buildRecMenuItems()
+      drawRecMenu()
+      recMenuSelDirty = false
+    }
+  }
+
+  // ---- REC 视觉反馈（录制中持续显示 + 计时）----
+  const recEnt = document.querySelector('#recIndicator')
+  if (recEnt) {
+    if (recYActive) {
+      if (!recEnt.getAttribute('visible')) recEnt.setAttribute('visible', 'true')
+      recElapsedText.value = ((now - recStartTime) / 1000).toFixed(1) + 's'
+    } else if (recEnt.getAttribute('visible')) {
+      recEnt.setAttribute('visible', 'false')
+    }
   }
 }
 
@@ -808,7 +1041,6 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
     ctx.fillText(isLeft ? '未检测到左手柄' : '未检测到右手柄', xPos, 112)
     return
   }
-  if (controller.buttons?.[12]?.pressed) { restartSystem(); return }
   let posText = 'POS: 0.00, 0.00, 0.00'
   let rotText = 'ROT: 0.00, 0.00, 0.00'
   if (controller.position && controller.quaternion) {

@@ -142,6 +142,11 @@ onMounted(() => {
       robotStore.setControlMode(data.mode || 'pure_vr')
       robotStore.setExoActive(!!data.exo_active)
     }
+    // VR 动作录制列表 / 状态同步（Terminal status 推送，type 为 hardware_status）
+    if ((data.type === 'status' || data.type === 'hardware_status') && data.recordings !== undefined) {
+      robotStore.setRecordings(data.recordings)
+      robotStore.setRecordingState(data.recording_active, data.recording_name)
+    }
   })
 
   // 姿态列表持续重试：WS 连上且姿态列表为空时周期重拉

@@ -17,6 +17,11 @@ export const useRobotStore = defineStore('robot', () => {
   const currentPoseName = ref('')  // 当前选中的姿态名
   const poseLoading = ref(false)
 
+  // ---- VR 动作录制 ----
+  const recordings = ref([])        // [{ name, rec_type, frames, duration }]
+  const recordingActive = ref(false)
+  const recordingName = ref(null)
+
   // ---- 操作 ----
   function setEngaged(val) {
     isRobotEngaged.value = val
@@ -46,6 +51,14 @@ export const useRobotStore = defineStore('robot', () => {
     currentPoseName.value = name
   }
 
+  function setRecordings(list) {
+    recordings.value = list || []
+  }
+  function setRecordingState(active, name) {
+    recordingActive.value = !!active
+    recordingName.value = name || null
+  }
+
   /** 断开时清除姿态缓存 */
   function resetOnDisconnect() {
     isRobotEngaged.value = false
@@ -68,6 +81,11 @@ export const useRobotStore = defineStore('robot', () => {
     setPoseList,
     setPoseLoading,
     setCurrentPoseName,
+    recordings,
+    recordingActive,
+    recordingName,
+    setRecordings,
+    setRecordingState,
     resetOnDisconnect,
   }
 })
