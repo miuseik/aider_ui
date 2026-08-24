@@ -13,14 +13,14 @@ const ROOM_ID = 'robot-camera'
 const HARDCODED_ICE_SERVERS = [
   { urls: ['stun:121.40.151.10:3478'] },
   { urls: ['turn:121.40.151.10:3478'], username: 'aider', credential: 'aider123456' },
-  { urls: ['turns:houqicg.com:5349'], username: 'aider', credential: 'aider123456' },
+  { urls: ['turns:server.houqicg.com:5349'], username: 'aider', credential: 'aider123456' },
 ]
 
 // 开发环境：通过 Vite /ws proxy 转发到 server（复用页面 origin，访问哪个域名就连哪个域名的 ws）
-// 生产环境：直连 www.houqicg.com（复用主域名证书，避免 ws.houqicg.com 证书不匹配）
+// 生产环境：直连 server.houqicg.com（WebSocket Server 独立子域名）
 const CLIENT_WS_URL = import.meta.env.DEV
   ? `${location.origin}/ws/client/webrtc-camera`
-  : 'wss://www.houqicg.com/ws/client/webrtc-camera'
+  : 'wss://server.houqicg.com/ws/client/webrtc-camera'
 
 export function useWebRTC(videoRef) {
   const connectionState = ref('disconnected')

@@ -14,12 +14,20 @@ class WebSocketClient {
     
     // 注册消息回调
     this.transport.onMessage(this._handleMessage.bind(this))
+    // WS 真正建立后（含断线重连）才发送身份认证并通知业务层。
+    // 之前认证消息在 CONNECTING 状态被 send() 丢弃，'connected' 事件也因同步调用而丢失。
+    this.transport.onOpen(() => {
+      const authMsg = { type: this.clientType }
+      this.transport.send(encodeMessage(authMsg))
+      console.log(`📨 已发送 ${this.clientType} 身份认证:`, authMsg)
+      this.notifyHandlers({ type: 'connected' })
+    })
   }
 
   getDefaultUrl() {
     // 优先用环境变量指定的地址；否则同源连接：直接复用页面 origin（协议+域名+端口整体跟随页面），
     // 由 vite(dev) 或 nginx(prod) 代理转发到 server 的 8442。
-    // 即访问 houqicg.com 就连 houqicg.com 的 ws，访问 localhost 就连 localhost 的 ws，访问哪个域名连哪个。
+    // 即访问 bot.houqicg.com 就连 server.houqicg.com 的 ws（同源由 nginx 代理），访问 localhost 就连 localhost 的 ws。
     if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
     return `${window.location.origin}/ws/client/ui`
   }
@@ -32,18 +40,7 @@ class WebSocketClient {
   }
 
   connect() {
-    const result = this.transport.connect()
-    
-    if (result) {
-      // 发送身份认证
-      const authMsg = { type: this.clientType }
-      this.transport.send(encodeMessage(authMsg))
-      console.log(`📨 已发送 ${this.clientType} 身份认证:`, authMsg)
-      
-      this.notifyHandlers({ type: 'connected' })
-    }
-    
-    return result
+    return this.transport.connect()
   }
 
   disconnect() {
