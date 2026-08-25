@@ -1041,26 +1041,58 @@ function displayControllerData(ctx, canvas, controller, hand, xPos) {
     ctx.fillText(isLeft ? '未检测到左手柄' : '未检测到右手柄', xPos, 112)
     return
   }
-  let posText = 'POS: 0.00, 0.00, 0.00'
-  let rotText = 'ROT: 0.00, 0.00, 0.00'
+  // XYZ 轴配色: X=红, Y=绿, Z=蓝
+  const AXIS_COLORS = ['#ff5555', '#55ff55', '#5599ff']
   if (controller.position && controller.quaternion) {
     const pos = controller.position
     const quat = controller.quaternion
-    posText = `POS: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`
-    rotText = `ROT: ${quat.x.toFixed(2)}, ${quat.y.toFixed(2)}, ${quat.z.toFixed(2)}`
+    const joyX = controller.joystick?.x?.toFixed(2) ?? '0.00'
+    const joyY = controller.joystick?.y?.toFixed(2) ?? '0.00'
+    const drawTriple = (label, vx, vy, vz, y) => {
+      ctx.font = '22px monospace'
+      ctx.fillStyle = '#cccccc'
+      ctx.fillText(label, xPos, y)
+      // 标签后偏移量，使 X/Y/Z 数值按颜色显示
+      const lx = xPos + (isLeft ? ctx.measureText(label).width + 8 : -8)
+      ctx.textAlign = isLeft ? 'left' : 'right'
+      const parts = [vx, vy, vz]
+      const sep = ', '
+      let cursor = lx
+      const widths = parts.map((p, i) => {
+        ctx.fillStyle = AXIS_COLORS[i]
+        const w = ctx.measureText(p).width
+        return w
+      })
+      const totalW = widths.reduce((s, w) => s + w, 0) + ctx.measureText(sep).width * 2
+      let startX = isLeft ? lx : (lx - totalW)
+      parts.forEach((p, i) => {
+        ctx.fillStyle = AXIS_COLORS[i]
+        ctx.fillText(p, startX, y)
+        startX += widths[i] + ctx.measureText(sep).width
+      })
+    }
+    drawTriple('POS:', pos.x.toFixed(2), pos.y.toFixed(2), pos.z.toFixed(2), 106)
+    drawTriple('ROT:', quat.x.toFixed(2), quat.y.toFixed(2), quat.z.toFixed(2), 134)
+    ctx.font = 'bold 24px monospace'
+    ctx.fillStyle = '#00ffff'
+    ctx.shadowBlur = 10
+    ctx.shadowColor = '#00ffff'
+    drawTriple('JOY:', joyX, joyY, '0.00', 165)
+    ctx.shadowBlur = 0
+  } else {
+    ctx.fillStyle = isLeft ? '#00ffcc' : '#ff99aa'
+    ctx.font = '22px monospace'
+    ctx.fillText('POS: N/A', xPos, 106)
+    ctx.fillText('ROT: N/A', xPos, 134)
+    ctx.fillText('JOY: N/A', xPos, 165)
   }
-  ctx.fillStyle = isLeft ? '#00ffcc' : '#ff99aa'
-  ctx.font = '22px monospace'
-  ctx.fillText(posText, xPos, 106)
-  ctx.fillText(rotText, xPos, 134)
-  ctx.fillStyle = '#00ffff'
-  ctx.font = 'bold 26px monospace'
-  ctx.shadowBlur = 10
-  ctx.shadowColor = '#00ffff'
-  const joyX = controller.joystick?.x?.toFixed(2) ?? '0.00'
-  const joyY = controller.joystick?.y?.toFixed(2) ?? '0.00'
-  ctx.fillText(`JOY: ${joyX}, ${joyY}`, xPos, 165)
-  ctx.shadowBlur = 0
+  // XYZ 配色图例
+  ctx.font = '18px monospace'
+  ctx.textAlign = isLeft ? 'left' : 'right'
+  const legendX = xPos + (isLeft ? 0 : -180)
+  ctx.fillStyle = AXIS_COLORS[0]; ctx.fillText('X', legendX, 188)
+  ctx.fillStyle = AXIS_COLORS[1]; ctx.fillText('Y', legendX + 30, 188)
+  ctx.fillStyle = AXIS_COLORS[2]; ctx.fillText('Z', legendX + 60, 188)
   const buttons = controller.buttons
   if (!buttons || buttons.length === 0) return
   ctx.fillStyle = '#ffffff'
