@@ -113,6 +113,7 @@
                   <select v-model="servo.mode" @change="switchMode(servo)" class="mode-select">
                     <option value="position">位置模式</option>
                     <option value="speed">速度模式</option>
+                    <option value="turns">圈数模式</option>
                   </select>
                 </div>
               </div>
@@ -137,7 +138,7 @@
                   class="angle-slider"
                 />
               </div>
-              <div class="servo-control" v-else>
+              <div class="servo-control" v-else-if="(servo.mode || 'position') === 'speed'">
                 <input 
                   type="range" 
                   v-model.number="servo.speed" 
@@ -147,8 +148,30 @@
                   class="speed-slider"
                 />
               </div>
+              <div class="servo-control" v-else>
+                <input 
+                  type="range" 
+                  v-model.number="servo.turns" 
+                  min="-25" 
+                  max="25" 
+                  step="0.1"
+                  @input="updateServoTurns(servo)"
+                  class="speed-slider"
+                  title="圈数（相对当前位置，1圈=1mm，行程25mm=±25圈，切勿超程！）"
+                />
+                <input 
+                  type="range" 
+                  v-model.number="servo.turnsSpeed" 
+                  min="1" 
+                  max="33" 
+                  step="1"
+                  @input="updateServoTurns(servo)"
+                  class="speed-slider"
+                  title="最大速度 rad/s（RS05 上限 33，默认 20）"
+                />
+              </div>
               <div class="servo-actions">
-                <span class="speed-value" >{{ servo.speed || 0 }}</span>
+                <span class="speed-value" >{{ (servo.mode || 'position') === 'turns' ? (servo.turns || 0) + ' 圈 (' + ((servo.turns || 0) * 1).toFixed(1) + ' mm) @ ' + (servo.turnsSpeed || 20) + ' r/s' : (servo.speed || 0) }}</span>
                 <button @click="stopServo(servo)" class="btn-stop" title="停止">
                   ⏹️
                 </button>
@@ -358,6 +381,8 @@ const claimServos = async () => {
         ...servo,
         angle: 0,
         speed: 0,
+        turns: 0,
+        turnsSpeed: 20,
         mode: 'position'
       }))
     }
@@ -370,6 +395,8 @@ const claimServos = async () => {
         ...servo,
         angle: 0,
         speed: 0,
+        turns: 0,
+        turnsSpeed: 20,
         mode: 'position'
       }))
       foundServos.value = [...foundServos.value, ...rightServos]
@@ -728,6 +755,19 @@ const setServoSpeed = async (servoId, speed, port) => {
   }
 }
 
+/**
+ * 设置舵机圈数（统一接口，CSP 相对当前位置转动）
+ */
+const setServoTurns = async (servoId, turns, port, speed) => {
+  try {
+    const response = await api.setServoTurns(servoId, turns, port, speed)
+    return response.code === 200
+  } catch (error) {
+    console.error(`设置舵机 ${servoId} 圈数失败:`, error)
+    return false
+  }
+}
+
 // 回读防抖：连续设置同一舵机时，只在其停止操作 1 秒后回读一次（避免高频 get_info 请求）
 const refreshDebounced = {}
 const scheduleRefresh = (servoId) => {
@@ -846,6 +886,8 @@ const scanServos = async () => {
             ...servo,
             angle: 0,
             speed: 0,
+            turns: 0,
+            turnsSpeed: 20,
             mode: 'position'
           }))
           allFoundServos = [...allFoundServos, ...servos]
@@ -894,7 +936,8 @@ const switchMode = async (servo) => {
     const response = await api.setServoMode(servo.id, servo.mode, servo.port)
     
     if (response.code === 200) {
-      ElMessage.success(`舵机 ${servo.id} 已切换到${servo.mode === 'position' ? '位置' : '速度'}模式`)
+      const modeNames = { position: '位置', speed: '速度', turns: '圈数' }
+      ElMessage.success(`舵机 ${servo.id} 已切换到${modeNames[servo.mode] || servo.mode}模式`)
     }
   } catch (error) {
     console.error('切换模式失败:', error)
@@ -911,6 +954,19 @@ const updateServoSpeed = (servo) => {
   // 设置新定时器
   updateTimer = setTimeout(async () => {
     await setServoSpeed(servo.id, servo.speed, servo.port)
+  }, 100)  // 100ms 防抖
+}
+
+// 更新舵机圈数（防抖：滑动停止后 100ms 发送，CSP 相对当前位置转动）
+const updateServoTurns = (servo) => {
+  // 清除之前的定时器
+  if (updateTimer) {
+    clearTimeout(updateTimer)
+  }
+
+  // 设置新定时器
+  updateTimer = setTimeout(async () => {
+    await setServoTurns(servo.id, servo.turns || 0, servo.port, servo.turnsSpeed || 20)
   }, 100)  // 100ms 防抖
 }
 
@@ -1438,7 +1494,7 @@ const refreshPorts = async () => {
 }
 
 .speed-value {
-  min-width: 60px;
+  min-width: 110px;
   text-align: right;
   font-family: 'JetBrains Mono', monospace;
   font-size: 14px;

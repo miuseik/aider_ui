@@ -6,39 +6,62 @@
         <!-- 有舵机：三行卡片 + 可选校准行 -->
         <div class="servo-item" v-if="servo.servoId" :class="{ 'is-feetech': servo.isFeetech }">
           <div class="label-row">
-            <span class="servo-label">{{ getServoLabel(servo.key) }}</span>
+            <span class="servo-label">{{ servo.label || getServoLabel(servo.key) }}</span>
             <span class="angle">{{ getAngle(servo.servoId) }}°</span>
             <span class="slot" :class="getServoStatus(servo.servoId).online ? 'online' : 'offline'">
               {{ getServoStatus(servo.servoId).display }}
             </span>
           </div>
           <div class="slider-row">
-            <button class="step-btn" @click="stepAngle(servo.servoId, -1)" title="-1°">◀</button>
+            <button class="step-btn" @click="stepAngle(servo, -1)" title="-1°">◀</button>
             <input type="range" :value="getAngle(servo.servoId)"
-              @input="e => { setAngle(servo.servoId, +e.target.value); updateAngle(servo.servoId) }"
-              min="-180" max="180" class="slider" :style="sliderStyle(servo.servoId)" />
-            <button class="step-btn" @click="stepAngle(servo.servoId, 1)" title="+1°">▶</button>
+              @input="e => { setAngle(servo.servoId, +e.target.value); updateAngle(servo) }"
+              :min="getLimit(servo).min" :max="getLimit(servo).max" class="slider" :style="sliderStyle(servo.servoId)" />
+            <button class="step-btn" @click="stepAngle(servo, 1)" title="+1°">▶</button>
           </div>
           <div class="input-row">
-            <input type="number" class="angle-input" 
+            <input type="number" class="angle-input"
               :value="getServoInput(servo.servoId)"
               @input="e => servoInputMap.set(servo.servoId, e.target.value)"
-              min="-180" max="180" step="0.1"
-              @keydown.enter="confirmAngle(servo.servoId)" />
-            <button class="btn-confirm" @click="confirmAngle(servo.servoId)" title="确认角度">✓</button>
+              :min="getLimit(servo).min" :max="getLimit(servo).max" step="0.1"
+              @keydown.enter="confirmAngle(servo)" />
+            <button class="btn-confirm" @click="confirmAngle(servo)" title="确认角度">✓</button>
+          </div>
+          <!-- 关节模式：限位显示 + 编辑 -->
+          <div v-if="isJointPart" class="limit-row">
+            <template v-if="!limitEditMap.has(servo.key)">
+              <span class="limit-label">限位</span>
+              <span class="limit-value">[{{ getLimit(servo).min }}°, {{ getLimit(servo).max }}°]</span>
+              <button class="btn-limit" @click="startEditLimit(servo)" title="编辑限位">✎</button>
+            </template>
+            <template v-else>
+              <input type="number" class="limit-input" v-model.number="limitEditMap.get(servo.key).min" step="1" />
+              <span class="limit-sep">~</span>
+              <input type="number" class="limit-input" v-model.number="limitEditMap.get(servo.key).max" step="1" />
+              <button class="btn-limit save" @click="saveLimit(servo)" title="保存限位">✓</button>
+              <button class="btn-limit" @click="limitEditMap.delete(servo.key)" title="取消">✕</button>
+            </template>
           </div>
           <div class="btns-row">
-            <button @click="$emit('claim', partName, idx + 1)" :disabled="scanning" title="认领">🔍</button>
-            <button @click="$emit('ping', partName, idx + 1)" :disabled="scanning" title="Ping" class="amber">📡</button>
-            <button @click="$emit('calibrate', partName, idx + 1)" :disabled="scanning" title="校准" class="purple">⚙️</button>
-            <button @click="fetchServoInfo(servo.servoId)" :disabled="scanning || fetchingInfo" title="获取信息" class="teal">📋</button>
-            <button
-              v-if="!servo.isFeetech && showCalibration"
-              @click="confirmSetZero(partName, servo.key, servo.servoId)"
-              :disabled="!getServoStatus(servo.servoId).online || calibrating"
-              title="将当前位置设置为电机的零位参考点"
-              class="green"
-            >0️⃣</button>
+            <el-tooltip content="认领：将该舵机 ID 绑定到当前关节位置" placement="top" :show-after="300">
+              <button @click="$emit('claim', partName, idx + 1)" :disabled="scanning">🔍</button>
+            </el-tooltip>
+            <el-tooltip content="Ping：发送探测帧，检测舵机是否在线响应" placement="top" :show-after="300">
+              <button @click="$emit('ping', partName, idx + 1)" :disabled="scanning" class="amber">📡</button>
+            </el-tooltip>
+            <el-tooltip content="校准：读取当前位置，作为该关节的角度基准" placement="top" :show-after="300">
+              <button @click="$emit('calibrate', partName, idx + 1)" :disabled="scanning" class="purple">⚙️</button>
+            </el-tooltip>
+            <el-tooltip content="获取信息：读取电机型号、固件版本、实时位置等参数" placement="top" :show-after="300">
+              <button @click="fetchServoInfo(servo.servoId)" :disabled="scanning || fetchingInfo" class="teal">📋</button>
+            </el-tooltip>
+            <el-tooltip v-if="!servo.isFeetech && showCalibration" content="设置零位：将当前位置设为电机零位参考点（写入电机 EEPROM）" placement="top" :show-after="300">
+              <button
+                @click="confirmSetZero(partName, servo.key, servo.servoId)"
+                :disabled="!getServoStatus(servo.servoId).online || calibrating"
+                class="green"
+              >0️⃣</button>
+            </el-tooltip>
           </div>
           <!-- Feetech 舵机：零位偏移量 + 记录按钮 -->
           <div v-if="servo.isFeetech && showCalibration" class="offset-row">
@@ -46,25 +69,27 @@
             <span class="offset-value" :class="{ changed: servo.zeroOffset !== 0 }">
               {{ fmtOffset(servo.zeroOffset) }}°
             </span>
-            <button
-              class="btn-offset"
-              :disabled="!getServoStatus(servo.servoId).online || calibrating"
-              @click="emit('recordOffset', partName, servo.key, servo.servoId)"
-              title="读取当前位置，计算并记录零位偏移"
-            >
-              记录零位
-            </button>
+            <el-tooltip content="记录零位：读取当前位置，计算并记录零位偏移（写入校准文件）" placement="bottom" :show-after="300">
+              <button
+                class="btn-offset"
+                :disabled="!getServoStatus(servo.servoId).online || calibrating"
+                @click="emit('recordOffset', partName, servo.key, servo.servoId)"
+              >
+                记录零位
+              </button>
+            </el-tooltip>
           </div>
           <!-- 非 Feetech：设置零位 -->
           <div v-else-if="!servo.isFeetech && showCalibration" class="offset-row">
-            <button
-              class="btn-offset motor-zero"
-              :disabled="!getServoStatus(servo.servoId).online || calibrating"
-              @click="emit('setZero', partName, servo.key, servo.servoId)"
-              title="将当前位置设置为电机的零位参考点"
-            >
-              设置零位
-            </button>
+            <el-tooltip content="设置零位：将当前位置设为电机零位参考点（写入电机 EEPROM）" placement="bottom" :show-after="300">
+              <button
+                class="btn-offset motor-zero"
+                :disabled="!getServoStatus(servo.servoId).online || calibrating"
+                @click="emit('setZero', partName, servo.key, servo.servoId)"
+              >
+                设置零位
+              </button>
+            </el-tooltip>
           </div>
         </div>
         <!-- 无舵机：空占位 -->
@@ -78,7 +103,7 @@
 
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { eventBus } from '@/utils/eventBus.js'
 import * as api from '@/api'
 
@@ -135,12 +160,61 @@ const sliderStyle = (servoId) => {
   return { accentColor: color, '--slider-color': color }
 }
 
+// ---- 关节模式：双臂/脖子/腰按 URDF 关节名控制（经 adapter，仿真同步）----
+// 底盘轮/升降轴保持电机 ID 直控（连续旋转/电机角度，无关节概念）
+const JOINT_PARTS = ['left_arm', 'right_arm', 'neck', 'waist']
+const isJointPart = computed(() => JOINT_PARTS.includes(props.partName))
+
+// 限位本地覆盖（编辑保存后立即生效，下次刷新 robotConfig 后以 yaml 为准）
+const limitOverrideMap = ref(new Map())
+const getLimit = (servo) => {
+  const o = limitOverrideMap.value.get(servo.key)
+  if (o) return o
+  return {
+    min: servo.minAngle ?? -180,
+    max: servo.maxAngle ?? 180,
+  }
+}
+
+// ---- 限位编辑 ----
+const limitEditMap = ref(new Map())  // key -> {min, max}
+const startEditLimit = (servo) => {
+  const { min, max } = getLimit(servo)
+  limitEditMap.value.set(servo.key, { min, max })
+}
+const savingLimit = ref(false)
+const saveLimit = async (servo) => {
+  const e = limitEditMap.value.get(servo.key)
+  if (!e) return
+  const lo = Number(e.min), hi = Number(e.max)
+  if (isNaN(lo) || isNaN(hi) || lo >= hi) {
+    ElMessage.error('限位无效：下限必须小于上限')
+    return
+  }
+  savingLimit.value = true
+  try {
+    const res = await api.updateJointLimits(props.partName, servo.key, lo, hi)
+    if (res.code === 200) {
+      limitOverrideMap.value.set(servo.key, { min: lo, max: hi })
+      limitEditMap.value.delete(servo.key)
+      ElMessage.success(`${servo.key} 限位已保存 [${lo}°, ${hi}°]`)
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (err) {
+    ElMessage.error('保存失败: ' + (err?.message || err))
+  } finally {
+    savingLimit.value = false
+  }
+}
+
 // 箭头微调：按步长增减角度
-const stepAngle = (servoId, delta) => {
-  const current = getAngle(servoId)
-  const next = Math.round(current + delta)
-  setAngle(servoId, next)
-  updateAngle(servoId)
+const stepAngle = (servo, delta) => {
+  const { min, max } = getLimit(servo)
+  const current = getAngle(servo.servoId)
+  const next = Math.max(min, Math.min(max, Math.round(current + delta)))
+  setAngle(servo.servoId, next)
+  updateAngle(servo)
 }
 
 // 精确输入
@@ -151,13 +225,14 @@ const getServoInput = (servoId) => {
   }
   return servoInputMap.value.get(servoId)
 }
-const confirmAngle = (servoId) => {
-  const val = parseFloat(servoInputMap.value.get(servoId))
+const confirmAngle = (servo) => {
+  const val = parseFloat(servoInputMap.value.get(servo.servoId))
   if (isNaN(val)) return
-  const clamped = Math.max(-180, Math.min(180, val))
-  setAngle(servoId, clamped)
-  servoInputMap.value.set(servoId, String(clamped))
-  updateAngle(servoId)
+  const { min, max } = getLimit(servo)
+  const clamped = Math.max(min, Math.min(max, val))
+  setAngle(servo.servoId, clamped)
+  servoInputMap.value.set(servo.servoId, String(clamped))
+  updateAngle(servo)
 }
 
 // 📋 获取电机信息
@@ -185,14 +260,21 @@ const fetchServoInfo = async (servoId) => {
 
 // 更新角度（防抖）
 let updateTimer = null
-const updateAngle = (servoId) => {
+const updateAngle = (servo) => {
   if (updateTimer) clearTimeout(updateTimer)
-  
+
   updateTimer = setTimeout(() => {
-    const found = foundServos.value.find(s => s.id === servoId)
+    // 关节模式：按 URDF 关节名走 adapter（软限位钳制，仿真+硬件同步）
+    if (isJointPart.value) {
+      api.setJointAngle(servo.key, getAngle(servo.servoId))
+        .catch(err => console.error('[RobotPart] setJointAngle failed:', err))
+      return
+    }
+    // 电机直控（底盘轮/升降轴）
+    const found = foundServos.value.find(s => s.id === servo.servoId)
     emit('update-angle', {
-      servoId,
-      angle: getAngle(servoId),
+      servoId: servo.servoId,
+      angle: getAngle(servo.servoId),
       port: found?.port
     })
   }, 100)
@@ -225,6 +307,9 @@ const displayServos = computed(() => {
         brand: brand.toLowerCase(),
         isFeetech: brand.toLowerCase().startsWith('feetech'),
         zeroOffset: isObj ? (config.zero_offset ?? 0) : 0,
+        minAngle: isObj ? (config.min_angle ?? -180) : -180,
+        maxAngle: isObj ? (config.max_angle ?? 180) : 180,
+        label: isObj ? (config.joint_name || '') : '',
       })
     }
   } else if (Array.isArray(props.servos)) {
@@ -236,6 +321,8 @@ const displayServos = computed(() => {
           brand,
           isFeetech: brand.startsWith('feetech'),
           zeroOffset: item.zero_offset ?? 0,
+          minAngle: item.min_angle ?? -180,
+          maxAngle: item.max_angle ?? 180,
         })
       }
     }
@@ -435,6 +522,41 @@ function fmtOffset(val) {
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* 限位行 */
+.limit-row {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 5px; padding-top: 4px;
+  border-top: 1px dashed #2d3139;
+  font-size: 10px;
+}
+.limit-label { color: #6b7280; }
+.limit-value {
+  font-family: 'JetBrains Mono', monospace;
+  color: #9ca3af; font-weight: 600;
+}
+.limit-sep { color: #6b7280; }
+.limit-input {
+  width: 52px; height: 20px; padding: 0 4px;
+  border: 1px solid #2d3139; border-radius: 3px;
+  background: #111318; color: #e2e8f0;
+  font-size: 10px; font-family: 'JetBrains Mono', monospace;
+  text-align: center; outline: none;
+}
+.limit-input:focus { border-color: #3b82f6; }
+.limit-input::-webkit-inner-spin-button,
+.limit-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.btn-limit {
+  margin-left: auto;
+  padding: 1px 7px; border: 1px solid #4b5563; border-radius: 3px;
+  background: transparent; color: #9ca3af;
+  font-size: 10px; cursor: pointer; transition: all .15s;
+}
+.btn-limit:hover { border-color: #3b82f6; color: #60a5fa; }
+.btn-limit.save { border-color: #059669; color: #34d399; margin-left: 0; }
+.btn-limit.save:hover { background: #059669; color: #fff; }
+.limit-row .btn-limit:not(.save) { margin-left: 0; }
+.limit-row .btn-limit:first-of-type { margin-left: auto; }
 
 /* Feetech 左边框标记 */
 .servo-item.is-feetech {

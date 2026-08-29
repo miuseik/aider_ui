@@ -3,20 +3,24 @@
     <div class="robot-header">
       <h3>🤖 机器人硬件信息</h3>
       <div class="header-actions" v-if="showCalibration">
-        <button
-          class="btn btn-batch"
-          :disabled="calibrating || feetechCount === 0"
-          @click="$emit('batchCalibrate')"
-        >
-          {{ calibrating ? '校准中...' : '🔧 一键记录全部' }}
-        </button>
-        <button
-          class="btn btn-reset"
-          :disabled="calibrating"
-          @click="confirmReset"
-        >
-          ↩ 重置偏移量
-        </button>
+        <el-tooltip content="一键记录全部：批量读取所有 Feetech 舵机当前位置并记录为零位偏移" placement="bottom" :show-after="300">
+          <button
+            class="btn btn-batch"
+            :disabled="calibrating || feetechCount === 0"
+            @click="$emit('batchCalibrate')"
+          >
+            {{ calibrating ? '校准中...' : '🔧 一键记录全部' }}
+          </button>
+        </el-tooltip>
+        <el-tooltip content="重置偏移量：将所有零位偏移量归零（不可撤销）" placement="bottom" :show-after="300">
+          <button
+            class="btn btn-reset"
+            :disabled="calibrating"
+            @click="confirmReset"
+          >
+            ↩ 重置偏移量
+          </button>
+        </el-tooltip>
       </div>
     </div>
 
@@ -32,13 +36,15 @@
     <div v-if="exoJoints.length" class="exo-section">
       <div class="exo-section-header">
         <span class="exo-section-title">🦴 外骨骼关节角度 ({{ exoJoints.length }}路)</span>
-        <button
-          class="btn btn-exo-zero"
-          :disabled="exoZeroing"
-          @click="$emit('exoZero')"
-        >
-          {{ exoZeroing ? '归零中...' : '🎯 一键归零' }}
-        </button>
+        <el-tooltip content="一键归零：将所有外骨骼关节的当前位置设为零点（写入校准文件）" placement="bottom" :show-after="300">
+          <button
+            class="btn btn-exo-zero"
+            :disabled="exoZeroing"
+            @click="$emit('exoZero')"
+          >
+            {{ exoZeroing ? '归零中...' : '🎯 一键归零' }}
+          </button>
+        </el-tooltip>
       </div>
       <div class="exo-arms-row">
         <!-- 左臂 -->
@@ -46,14 +52,15 @@
           <div class="exo-arm-label">🦾 左臂</div>
           <div class="exo-joints">
             <div v-for="j in leftExoJoints" :key="j.channel" class="exo-bar-item" :class="{ disabled: !j.enabled }">
-              <button
-                class="btn-exo-zero-single"
-                :disabled="exoZeroingChannels.has(j.channel)"
-                :title="`将 ch${j.channel} 当前位置设为零点`"
-                @click="$emit('exoZeroChannel', j.channel)"
-              >
-                {{ exoZeroingChannels.has(j.channel) ? '...' : '◎' }}
-              </button>
+              <el-tooltip :content="`将 ch${j.channel} 当前位置设为零点（单通道归零）`" placement="right" :show-after="300">
+                <button
+                  class="btn-exo-zero-single"
+                  :disabled="exoZeroingChannels.has(j.channel)"
+                  @click="$emit('exoZeroChannel', j.channel)"
+                >
+                  {{ exoZeroingChannels.has(j.channel) ? '...' : '◎' }}
+                </button>
+              </el-tooltip>
               <span class="exo-tag ch-tag">ch{{ j.channel }}</span>
               <span class="exo-tag joint-tag">{{ j.name }}</span>
               <div class="exo-bar-track">
@@ -64,12 +71,13 @@
                 ></div>
               </div>
               <span class="exo-bar-val">{{ j.displayAngle }}</span>
-              <button
-                class="btn-exo-settings"
-                :class="{ active: isReversed(j.channel) }"
-                :title="`ch${j.channel} 设置`"
-                @click="openSettings(j.channel)"
-              >⚙</button>
+              <el-tooltip :content="`ch${j.channel} 设置：启用通道 / 反转方向`" placement="right" :show-after="300">
+                <button
+                  class="btn-exo-settings"
+                  :class="{ active: isReversed(j.channel) }"
+                  @click="openSettings(j.channel)"
+                >⚙</button>
+              </el-tooltip>
             </div>
           </div>
         </div>
@@ -78,14 +86,15 @@
           <div class="exo-arm-label">🦾 右臂</div>
           <div class="exo-joints">
             <div v-for="j in rightExoJoints" :key="j.channel" class="exo-bar-item" :class="{ disabled: !j.enabled }">
-              <button
-                class="btn-exo-zero-single"
-                :disabled="exoZeroingChannels.has(j.channel)"
-                :title="`将 ch${j.channel} 当前位置设为零点`"
-                @click="$emit('exoZeroChannel', j.channel)"
-              >
-                {{ exoZeroingChannels.has(j.channel) ? '...' : '◎' }}
-              </button>
+              <el-tooltip :content="`将 ch${j.channel} 当前位置设为零点（单通道归零）`" placement="right" :show-after="300">
+                <button
+                  class="btn-exo-zero-single"
+                  :disabled="exoZeroingChannels.has(j.channel)"
+                  @click="$emit('exoZeroChannel', j.channel)"
+                >
+                  {{ exoZeroingChannels.has(j.channel) ? '...' : '◎' }}
+                </button>
+              </el-tooltip>
               <span class="exo-tag ch-tag">ch{{ j.channel }}</span>
               <span class="exo-tag joint-tag">{{ j.name }}</span>
               <div class="exo-bar-track">
@@ -96,12 +105,13 @@
                 ></div>
               </div>
               <span class="exo-bar-val">{{ j.displayAngle }}</span>
-              <button
-                class="btn-exo-settings"
-                :class="{ active: isReversed(j.channel) }"
-                :title="`ch${j.channel} 设置`"
-                @click="openSettings(j.channel)"
-              >⚙</button>
+              <el-tooltip :content="`ch${j.channel} 设置：启用通道 / 反转方向`" placement="right" :show-after="300">
+                <button
+                  class="btn-exo-settings"
+                  :class="{ active: isReversed(j.channel) }"
+                  @click="openSettings(j.channel)"
+                >⚙</button>
+              </el-tooltip>
             </div>
           </div>
         </div>

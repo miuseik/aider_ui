@@ -69,6 +69,21 @@ export function setServoMode(servoId, mode, port) {
 }
 
 /**
+ * 设置舵机圈数（RobStride CSP 连续位置模式，相对当前位置转动，丝杆夹爪多圈用）
+ * @param {number} servoId - 舵机 ID
+ * @param {number} turns - 圈数（正=正转，负=反转）
+ * @param {string} port - 串口/CAN 端口路径
+ * @param {number} [speed] - 可选，最大速度 (rad/s)，不传用终端默认 20
+ */
+export function setServoTurns(servoId, turns, port, speed) {
+  const payload = { servo_id: servoId, turns, port }
+  if (speed !== undefined && speed !== null) {
+    payload.speed = speed
+  }
+  return request.post('/servo/set_turns', payload)
+}
+
+/**
  * 重置舵机
  * @param {number} servoId - 舵机 ID
  * @param {string} port - 串口路径
@@ -128,4 +143,25 @@ export function startBatchCalibrate(port) {
  */
 export function calibrateSingleOffset(servoId, port) {
   return request.post('/servo/calibrate-offset', { servo_id: servoId, port })
+}
+
+/**
+ * 关节级单关节角度控制（经 Terminal adapter → 软限位钳制 → 仿真+硬件同步）
+ * 与 setServoAngle（电机 ID 直控）不同，按 URDF 关节名控制，仿真模型同步运动
+ * @param {string} jointName - URDF 关节名（如 left_arm2 / waist_Link / head_Link）
+ * @param {number} angle - 关节角度（度）
+ */
+export function setJointAngle(jointName, angle) {
+  return request.post('/joint/set_angle', { joint_name: jointName, angle })
+}
+
+/**
+ * 更新单个关节的限位（写回 servo_ids.yaml，Terminal 热更新钳制层）
+ * @param {string} part - 部位键名（left_arm/right_arm/neck/waist/...）
+ * @param {string} joint - URDF 关节名
+ * @param {number} minAngle - 下限（度）
+ * @param {number} maxAngle - 上限（度）
+ */
+export function updateJointLimits(part, joint, minAngle, maxAngle) {
+  return request.post('/servo/limits', { part, joint, min_angle: minAngle, max_angle: maxAngle })
 }
