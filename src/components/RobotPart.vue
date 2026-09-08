@@ -79,15 +79,15 @@
               </button>
             </el-tooltip>
           </div>
-          <!-- 非 Feetech：设置零位 -->
+          <!-- 非 Feetech：关节设置（取反方向等） -->
           <div v-else-if="!servo.isFeetech && showCalibration" class="offset-row">
-            <el-tooltip content="设置零位：将当前位置设为电机零位参考点（写入电机 EEPROM）" placement="bottom" :show-after="300">
+            <el-tooltip content="设置：打开关节设置（取反方向，写入 servo_ids.yaml 的 direction）" placement="bottom" :show-after="300">
               <button
-                class="btn-offset motor-zero"
-                :disabled="!getServoStatus(servo.servoId).online || calibrating"
-                @click="emit('setZero', partName, servo.key, servo.servoId)"
+                class="btn-offset motor-settings"
+                :class="{ reversed: isReversed(servo) }"
+                @click="openSettings(servo)"
               >
-                设置零位
+                ⚙ 设置
               </button>
             </el-tooltip>
           </div>
@@ -98,6 +98,14 @@
         </div>
       </template>
     </div>
+
+    <!-- 关节设置弹窗（取反方向） -->
+    <JointSettingsDialog
+      v-model="settingsVisible"
+      :servo="settingsServo"
+      :part-name="partName"
+      @saved="onDirectionSaved"
+    />
   </div>
 </template>
 
@@ -106,6 +114,8 @@ import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { eventBus } from '@/utils/eventBus.js'
 import * as api from '@/api'
+import { useServoStore } from '@/stores/servo'
+import JointSettingsDialog from './JointSettingsDialog.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -208,6 +218,34 @@ const saveLimit = async (servo) => {
   }
 }
 
+// ---- 关节设置弹窗（取反方向：写入 servo_ids.yaml 的 direction）----
+const servoStore = useServoStore()
+const settingsVisible = ref(false)
+const settingsServo = ref(null)
+// 保存后的本地覆盖，避免等配置刷新按钮高亮才更新
+const directionOverrideMap = ref(new Map())
+
+/** 该关节是否已取反（direction < 0） */
+const isReversed = (servo) => {
+  const o = directionOverrideMap.value.get(servo.key)
+  return Number(o ?? servo.direction ?? 1) < 0
+}
+
+const openSettings = (servo) => {
+  settingsServo.value = servo
+  settingsVisible.value = true
+}
+
+/** 弹窗保存成功：本地高亮 + 强制刷新配置回填 yaml 新值 */
+const onDirectionSaved = async ({ joint, direction }) => {
+  directionOverrideMap.value.set(joint, direction)
+  try {
+    await servoStore.fetchServoIdConfig(true)
+  } catch (e) {
+    /* 刷新失败不影响已保存结果 */
+  }
+}
+
 // 箭头微调：按步长增减角度
 const stepAngle = (servo, delta) => {
   const { min, max } = getLimit(servo)
@@ -264,13 +302,7 @@ const updateAngle = (servo) => {
   if (updateTimer) clearTimeout(updateTimer)
 
   updateTimer = setTimeout(() => {
-    // 关节模式：按 URDF 关节名走 adapter（软限位钳制，仿真+硬件同步）
-    if (isJointPart.value) {
-      api.setJointAngle(servo.key, getAngle(servo.servoId))
-        .catch(err => console.error('[RobotPart] setJointAngle failed:', err))
-      return
-    }
-    // 电机直控（底盘轮/升降轴）
+    // 统一走电机直控，与扫描结果滑块相同的信息格式（setServoAngle）
     const found = foundServos.value.find(s => s.id === servo.servoId)
     emit('update-angle', {
       servoId: servo.servoId,
@@ -310,6 +342,7 @@ const displayServos = computed(() => {
         minAngle: isObj ? (config.min_angle ?? -180) : -180,
         maxAngle: isObj ? (config.max_angle ?? 180) : 180,
         label: isObj ? (config.joint_name || '') : '',
+        direction: isObj ? (config.direction ?? 1) : 1,
       })
     }
   } else if (Array.isArray(props.servos)) {
@@ -517,10 +550,28 @@ function fmtOffset(val) {
 .btn-offset.motor-zero:hover:not(:disabled) {
   background: #059669;
   color: #fff;
-}
-.btn-offset:disabled {
+}.btn-offset:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+/* 关节设置按钮（原“设置零位”长条位） */
+.btn-offset.motor-settings {
+  margin-left: 0;
+  width: 100%;
+  border-color: #8b5cf6;
+  color: #c4b5fd;
+}
+.btn-offset.motor-settings:hover {
+  background: #8b5cf6;
+  color: #fff;
+}
+.btn-offset.motor-settings.reversed {
+  border-color: #f59e0b;
+  color: #fbbf24;
+}
+.btn-offset.motor-settings.reversed:hover {
+  background: #f59e0b;
+  color: #fff;
 }
 
 /* 限位行 */

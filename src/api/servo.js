@@ -165,3 +165,13 @@ export function setJointAngle(jointName, angle) {
 export function updateJointLimits(part, joint, minAngle, maxAngle) {
   return request.post('/servo/limits', { part, joint, min_angle: minAngle, max_angle: maxAngle })
 }
+
+/**
+ * 更新单个关节的方向（取反，写回 servo_ids.yaml，Terminal 热更新）
+ * @param {string} part - 部位键名（left_arm/right_arm/neck/waist/...）
+ * @param {string} joint - URDF 关节名
+ * @param {number} direction - 1=正转（默认），-1=取反
+ */
+export function updateJointDirection(part, joint, direction) {
+  return request.post('/servo/direction', { part, joint, direction })
+}
