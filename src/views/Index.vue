@@ -608,10 +608,44 @@ onMounted(() => {
   // 加载外骨骼校准配置（用于进度条双向显示）
   loadExoCalibration()
 
-  // 监听 robot_hardware_info：实时更新页面上的硬件连接状态指示器
+  // 监听 WS 推送：实时更新页面上的硬件连接状态指示器（不再轮询 /api/status）
   // 注意：机器人连接/断开 + 姿态同步已由 App.vue 全局监听处理
   wsUnsubscribe = wsClient.onMessage((data) => {
-    if (data.type === 'robot_hardware_info') {
+    if (data.type === 'clients_status') {
+      // Server 广播：客户端/终端在线状态变化（clients_count / vrConnected / wsConnected / terminal_connected）
+      liveStatus.value = {
+        ...liveStatus.value,
+        clients_count: data.clients_count || 0,
+        vrConnected: !!data.vrConnected,
+        wsConnected: !!data.wsConnected,
+        terminal_connected: !!data.terminal_connected,
+      }
+    } else if (data.type === 'terminal_connected') {
+      liveStatus.value.terminal_connected = true
+    } else if (data.type === 'terminal_disconnected') {
+      liveStatus.value.terminal_connected = false
+    } else if (data.type === 'hardware_status') {
+      // Terminal 每秒推送：实时更新连接状态、关节角度、升降高度等
+      liveStatus.value = {
+        ...liveStatus.value,
+        robot_connected: !!data.robot_connected,
+        robotEngaged: !!data.robot_connected,
+        left_arm_connected: !!data.left_arm_connected,
+        right_arm_connected: !!data.right_arm_connected,
+        base_connected: !!data.base_connected,
+        lift_connected: !!data.lift_connected,
+        visualizer_connected: !!data.visualizer_connected,
+        keyboardEnabled: !!data.running,
+        left_arm_angles: data.left_arm_angles || [],
+        right_arm_angles: data.right_arm_angles || [],
+        lift_height_mm: data.lift_height_mm || 0,
+        network: {
+          ip: data.ip || '--',
+          ssid: data.ssid || '--',
+          hostname: data.hostname || '--',
+        },
+      }
+    } else if (data.type === 'robot_hardware_info') {
       liveStatus.value = {
         ...liveStatus.value,
         robot_connected: !!data.robot_connected,

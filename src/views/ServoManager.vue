@@ -203,6 +203,9 @@
         <button @click="refreshScan" class="btn btn-primary">
           🔄 刷新扫描
         </button>
+        <button @click="setAllServosZero" :disabled="batchZeroing" class="btn btn-batch-zero">
+          🎯 批量设置零位
+        </button>
         <button @click="resetAllServos" class="btn btn-warning">
           🏠 一键归零
         </button>
@@ -341,8 +344,8 @@ const onServoInfoFetched = (data) => {
 }
 
 onMounted(async () => {
-  // 获取可用串口列表并同步到 Pinia
-  await fetchAvailablePorts()
+  // 获取可用串口列表（Pinia 缓存，重复进入不重复请求）
+  await servoStore.fetchAvailablePorts()
   // 获取机器人配置（Pinia 缓存，首次调用才请求）
   await servoStore.fetchServoIdConfig()
   // 监听 get_info 结果，实时同步到 foundServos → RobotHardwareInfo 视图
@@ -592,6 +595,63 @@ const setServoZero = async (servo) => {
   } catch (error) {
     console.error('设零点失败:', error)
     ElMessage.error(`设零点失败: ${error.response?.data?.message || error.message}`)
+  }
+}
+
+/** 批量设置零位中（用于禁用按钮） */
+const batchZeroing = ref(false)
+
+/** 批量设置零位：轮询对扫描到的每个舵机逐个把当前位置设为 0°（写入 Flash） */
+async function setAllServosZero() {
+  const list = [...foundServos.value]
+  if (list.length === 0) {
+    ElMessage.warning('请先扫描舵机')
+    return
+  }
+
+  const confirmed = await ElMessageBox.confirm(
+    `将按顺序为扫描到的 ${list.length} 个舵机逐个设置零位（当前位置 → 0°，写入 Flash）。\n\n⚠️ 请先确保每个电机都已停在想要的零点位置，执行中不要断电或手动挪动电机！`,
+    '批量设置零位',
+    {
+      confirmButtonText: '开始设置',
+      cancelButtonText: '取消',
+      type: 'warning',
+    },
+  )
+  if (!confirmed) return
+
+  batchZeroing.value = true
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在设置零位 0/0 ...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+  let ok = 0
+  let fail = 0
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const servo = list[i]
+      loading.setText(`正在设置零位 ${i + 1}/${list.length}：舵机 ID=${servo.id} ...`)
+      try {
+        const res = await api.setServoZero(servo.id, servo.port || port.value)
+        if (res.code === 200) ok++
+        else fail++
+      } catch (e) {
+        console.error(`舵机 ${servo.id} 设置零位失败:`, e)
+        fail++
+      }
+      // 每个舵机之间留间隔，避免连续写 Flash / 总线冲突
+      await new Promise((r) => setTimeout(r, 600))
+    }
+  } finally {
+    loading.close()
+    batchZeroing.value = false
+  }
+
+  if (fail === 0) {
+    ElMessage.success(`全部 ${ok} 个舵机零位已设置`)
+  } else {
+    ElMessage.warning(`设置完成：成功 ${ok} 个，失败 ${fail} 个`)
   }
 }
 
@@ -1062,29 +1122,9 @@ const refreshScan = () => {
   scanServos()
 }
 
-// 获取可用串口列表
-const fetchAvailablePorts = async () => {
-  try {
-
-
-    const response = await api.listPorts()
-    const ports = response.data?.ports || []
-    // 补充 CAN 接口（舵机和电机同等重要）
-    if (!ports.includes('can0')) {
-      ports.push('can0')
-    }
-    servoStore.setAvailablePorts(ports)
-    // 自动选端口：只有当前是 'all' 默认值不变，保持扫描所有串口
-  } catch (error) {
-    console.error('获取串口列表失败:', error)
-    const defaultPorts = ['/dev/ttyACM0', 'can0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1']
-    servoStore.setAvailablePorts(defaultPorts)
-  }
-}
-
-// 刷新端口列表
+// 刷新端口列表（强制重新拉取，结果统一缓存到 Pinia）
 const refreshPorts = async () => {
-  await fetchAvailablePorts()
+  await servoStore.fetchAvailablePorts(true)
 }
 </script>
 
@@ -1244,6 +1284,20 @@ const refreshPorts = async () => {
 
 .btn-warning:hover {
   background: #d97706;
+}
+
+.btn-batch-zero {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.btn-batch-zero:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.btn-batch-zero:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-sm {

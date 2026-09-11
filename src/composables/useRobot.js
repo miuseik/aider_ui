@@ -84,7 +84,7 @@ export function useRobot() {
       return
     }
 
-    // === 连接流程：按钮立即变「连接中…」 → 轮询 /api/status 直到 robot_connected === true ===
+    // === 连接流程：按钮立即变「连接中…」 → WS 事件驱动等待真实连接结果（不再轮询 /api/status） ===
     connecting.value = true   // 立刻切换按钮为 loading + 「连接中…」
     showWarning.value = false
 
@@ -102,41 +102,47 @@ export function useRobot() {
         return
       }
 
-      // 命令已发往终端，开始轮询等待硬件真实连接
-      const maxAttempts = 25   // 25 * 1s = 25 秒超时
-      for (let i = 0; i < maxAttempts; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
-
-        // App.vue 可能已通过 WS robot_connect_response 提前设置已连接，直接结束轮询
-        if (isRobotEngaged.value) {
-          connecting.value = false
-          return
-        }
-
-        try {
-          const statusResp = await fetch('/api/status')
-          if (!statusResp.ok) continue
-          const result = await statusResp.json()
-          const biz = result.data || result
-          // 终端推送的 robot_connected 为 true 时才认为连接成功
-          if (biz.robot_connected || biz.robotEngaged) {
-            store.setEngaged(true)
-            connecting.value = false
-            ElMessage.success('机器人连接成功')
+      // 命令已发往终端，等待 WS 回执（robot_connect_response 成功/失败均会推送；
+      // robot_hardware_info.robot_connected 为兜底信号），25s 超时。
+      // App.vue 全局监听已负责弹窗 + 更新 store，这里只等事件落地。
+      const outcome = await new Promise((resolve) => {
+        let settled = false
+        const timer = setTimeout(() => {
+          if (!settled) { settled = true; unsubscribe(); resolve('timeout') }
+        }, 25000)
+        const unsubscribe = wsClient.onMessage((msg) => {
+          if (settled) return
+          // 极端时序兜底：回执在监听注册前已到达（store 已更新）
+          if (isRobotEngaged.value) {
+            settled = true
+            clearTimeout(timer)
+            unsubscribe()
+            resolve('success')
             return
           }
-        } catch (_) {
-          // 单次轮询失败（服务端暂未 ready），继续重试
-        }
-      }
+          if (msg.type === 'robot_connect_response') {
+            settled = true
+            clearTimeout(timer)
+            unsubscribe()
+            resolve(msg.success ? 'success' : 'failed')
+          } else if (msg.type === 'robot_hardware_info' && msg.robot_connected) {
+            settled = true
+            clearTimeout(timer)
+            unsubscribe()
+            resolve('success')
+          }
+        })
+      })
 
-      // 超时
-      ElMessage.error('连接超时，请确认硬件已上电后重试')
+      // 超时兜底
+      if (outcome === 'timeout') {
+        ElMessage.error('连接超时，请确认硬件已上电后重试')
+      }
     } catch (error) {
       console.error('连接机器人失败:', error)
       ElMessage.error('与服务器通信错误')
     } finally {
-      // 仅当尚未成功时才重置（成功分支已在 return 前设置 false）
+      // 仅当尚未成功时才重置（成功/失败分支已由 App.vue WS 监听设置 false）
       if (connecting.value) {
         connecting.value = false
         store.setEngaged(false)

@@ -36,6 +36,11 @@ const routes = [
         component: () => import('../views/CameraView.vue')
       },
       {
+        path: '/motion-library',
+        name: 'MotionLibrary',
+        component: () => import('../views/MotionLibrary.vue')
+      },
+      {
         path: '/profile',
         name: 'Profile',
         component: () => import('../views/user/Profile.vue')

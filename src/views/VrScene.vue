@@ -49,13 +49,15 @@ import { wsClient } from '../utils/websocket.js'
 import { getFullVRData, getButtonName } from '../utils/vrData.js'
 import { createAxisIndicators } from '../utils/vrHelpers.js'
 import { useRobotStore } from '../stores/robot.js'
-import { exoZero, getExoCalibration } from '@/api'
+import { useServoStore } from '@/stores/servo'
+import { exoZero, getExoCalibration, setServoZero } from '@/api'
 import WebrtcVideo from '../components/WebrtcVideo.vue'
 
 const route = useRoute()
 const sceneRef = ref(null)
 const webrtcRef = ref(null)
 const robotStore = useRobotStore()
+const servoStore = useServoStore()
 
 // ========== 节流常量 (ms) ==========
 const WS_SEND_INTERVAL = 33     // WebSocket 发送 ~30fps
@@ -80,7 +82,11 @@ let leftTriggerDown = false
 let rightTriggerDown = false
 let rightAButtonPrev = false  // 右手柄 A 键(buttons[4])边沿检测用
 let rightBButtonPrev = false  // 右手柄 B 键(buttons[5])边沿检测用
-let leftXButtonPrev = false   // 左手柄 X 键(buttons[4]) → goto zero pose
+const VR_X_LONG_PRESS_MS = 1500  // 左手柄 X 键长按阈值：≥此时长触发"批量设置零位"
+let leftXButtonPrev = false   // 左手柄 X 键(buttons[4])边沿检测用
+let leftXPressStart = 0       // X 按下起始时间（长按判定）
+let leftXLongTriggered = false// 本次按住是否已触发过长按
+let servoZeroFeedback = null  // X长按批量设零结果 { text, ok, time }，面板短暂显示
 let exoZeroFeedback = null    // B键归零结果 { text, ok, time }，面板短暂显示
 
 // === VR 动作录制菜单状态 ===
@@ -606,17 +612,63 @@ async function callExoZero() {
   console.log('[VrScene] B键(右手柄) → /api/exo/zero:', exoZeroFeedback.text)
 }
 
+/** X键长按 → 批量设置零位：前端自己挨个调 setServoZero（/servo/calibrate）对扫描列表里的每个电机 */
+async function setAllZeroFromScan() {
+  const servos = [...(servoStore.scannedServos || [])]
+  if (!servos.length) {
+    servoZeroFeedback = { text: '⚠️ 未扫描到电机，请先在「舵机管理」页扫描', ok: false, time: performance.now() }
+    return
+  }
+  let ok = 0
+  let fail = 0
+  for (let i = 0; i < servos.length; i++) {
+    const s = servos[i]
+    servoZeroFeedback = { text: `设置零位 ${i + 1}/${servos.length}  ID=${s.id}...`, ok: true, time: performance.now() }
+    try {
+      const res = await setServoZero(s.id, s.port)
+      if (res.code === 200) ok++
+      else fail++
+    } catch (e) {
+      console.error(`舵机 ${s.id} 设置零位失败:`, e)
+      fail++
+    }
+    // 写 Flash 间隔，避免总线压力
+    await new Promise((r) => setTimeout(r, 600))
+  }
+  servoZeroFeedback = {
+    text: fail === 0 ? `✅ 全部 ${ok} 个电机零位已设置` : `完成: 成功 ${ok} 失败 ${fail}`,
+    ok: fail === 0,
+    time: performance.now(),
+  }
+}
+
 function checkExoButtons(vrData) {
   if (!vrData) return
 
-  // ---- 左手柄 X 键(buttons[4]): 归零姿态 (goto_pose zero) ----
+  // ---- 左手柄 X 键(buttons[4]): 短按=归零姿态(goto_pose zero)；长按≥1.5s=批量设置零位(全部电机当前位置写入 Flash) ----
   if (vrData.leftController) {
     const leftButtons = vrData.leftController.buttons || []
     const xPressed = !!leftButtons.find(b => b.index === 4)?.pressed
     if (xPressed && !leftXButtonPrev) {
-      wsClient.send({ type: 'api_command', action: 'goto_pose', arm: 'both', pose_name: 'zero' })
-      robotStore.setCurrentPoseName('zero')
-      console.log('[VrScene] X键(左手柄) → goto_pose zero')
+      // 刚按下：记录起始时间，重置长按状态
+      leftXPressStart = performance.now()
+      leftXLongTriggered = false
+    } else if (xPressed && leftXButtonPrev) {
+      // 按住中：达到长按时长且本次未触发 → 触发批量设置零位（只触发一次）
+      if (!leftXLongTriggered && performance.now() - leftXPressStart >= VR_X_LONG_PRESS_MS) {
+        leftXLongTriggered = true
+        setAllZeroFromScan()
+        console.log('[VrScene] X键长按 → 批量设置零位 (UI 逐个调用 setServoZero)')
+      }
+    } else if (!xPressed && leftXButtonPrev) {
+      // 抬起：未触发过长按 → 视为短按 → 归零姿态
+      if (!leftXLongTriggered) {
+        wsClient.send({ type: 'api_command', action: 'goto_pose', arm: 'both', pose_name: 'zero' })
+        robotStore.setCurrentPoseName('zero')
+        console.log('[VrScene] X键短按 → goto_pose zero')
+      }
+      leftXPressStart = 0
+      leftXLongTriggered = false
     }
     leftXButtonPrev = xPressed
   }
@@ -1016,6 +1068,12 @@ function updateDataPanelInFrame(vrData) {
     ctx.fillStyle = exoZeroFeedback.ok ? '#00ff66' : '#ff4444'
     ctx.font = 'bold 24px monospace'
     ctx.fillText(exoZeroFeedback.text, canvas.width / 2, 254)
+  }
+  // ---- X键长按批量设零结果（4 秒短暂显示）----
+  if (servoZeroFeedback && performance.now() - servoZeroFeedback.time < 4000) {
+    ctx.fillStyle = servoZeroFeedback.ok ? '#00ff66' : '#ff4444'
+    ctx.font = 'bold 22px monospace'
+    ctx.fillText(servoZeroFeedback.text, canvas.width / 2, 286)
   }
 
   // ---- 外骨骼 16 路关节角度（左右臂两列，面板中央下方）----

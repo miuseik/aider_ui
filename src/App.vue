@@ -23,37 +23,28 @@ let globalWsUnsubscribe = null
 let poseRetryTimer = null
 
 // === Terminal 重启检测 ===
-// /api/status 返回 terminal_started_at（Terminal 进程启动时间戳），
+// Terminal 每秒推送 hardware_status（含 started_at 进程启动时间戳，Server 转发给 UI），
 // 值变化说明 Terminal 被 Docker 重新拉起（掉电自动重启 / 手动点重启），弹确认框告知用户。
+// 由 WS 推送驱动，不再轮询 /api/status。
 let lastTerminalStartedAt = null
 let restartNoticeShowing = false
-let restartCheckInterval = null
 
-async function checkTerminalRestart() {
-  try {
-    const resp = await fetch('/api/status')
-    if (!resp.ok) return
-    const result = await resp.json()
-    const data = result.data || result
-    const startedAt = data.terminal_started_at
-    if (!startedAt) return
-    if (lastTerminalStartedAt === null) {
-      // 首次记录基线，不弹窗
-      lastTerminalStartedAt = startedAt
-      return
-    }
-    if (startedAt !== lastTerminalStartedAt) {
-      lastTerminalStartedAt = startedAt
-      if (restartNoticeShowing) return
-      restartNoticeShowing = true
-      ElMessageBox.alert(
-        '机器人控制端已重启（电机掉电自动重启或手动重启）。\n\n机器人已断开连接，如需继续控制请重新点击「连接」。',
-        '🔄 Terminal 已重启',
-        { confirmButtonText: '知道了', type: 'warning' }
-      ).finally(() => { restartNoticeShowing = false })
-    }
-  } catch (e) {
-    console.error('[App] Terminal 重启检测轮询失败:', e.message || e)
+function handleTerminalStartedAt(startedAt) {
+  if (!startedAt) return
+  if (lastTerminalStartedAt === null) {
+    // 首次记录基线，不弹窗
+    lastTerminalStartedAt = startedAt
+    return
+  }
+  if (startedAt !== lastTerminalStartedAt) {
+    lastTerminalStartedAt = startedAt
+    if (restartNoticeShowing) return
+    restartNoticeShowing = true
+    ElMessageBox.alert(
+      '机器人控制端已重启（电机掉电自动重启或手动重启）。\n\n机器人已断开连接，如需继续控制请重新点击「连接」。',
+      '🔄 Terminal 已重启',
+      { confirmButtonText: '知道了', type: 'warning' }
+    ).finally(() => { restartNoticeShowing = false })
   }
 }
 
@@ -71,10 +62,6 @@ onMounted(() => {
   
   // 保存 interval ID 以便清理
   window.__wsCheckInterval = checkInterval
-
-  // Terminal 重启检测：每 3s 轮询 /api/status 的 terminal_started_at
-  checkTerminalRestart()
-  restartCheckInterval = setInterval(checkTerminalRestart, 3000)
 
   // === 应用初始化：预加载舵机 ID 配置到 Pinia ===
   const servoStore = useServoStore()
@@ -143,9 +130,13 @@ onMounted(() => {
       robotStore.setExoActive(!!data.exo_active)
     }
     // VR 动作录制列表 / 状态同步（Terminal status 推送，type 为 hardware_status）
-    if ((data.type === 'status' || data.type === 'hardware_status') && data.recordings !== undefined) {
-      robotStore.setRecordings(data.recordings)
-      robotStore.setRecordingState(data.recording_active, data.recording_name)
+    if (data.type === 'status' || data.type === 'hardware_status') {
+      if (data.recordings !== undefined) {
+        robotStore.setRecordings(data.recordings)
+        robotStore.setRecordingState(data.recording_active, data.recording_name)
+      }
+      // Terminal 重启检测：started_at 变化即弹窗（替代 /api/status 轮询）
+      handleTerminalStartedAt(data.started_at)
     }
   })
 
@@ -163,10 +154,6 @@ onUnmounted(() => {
   // 清理定时器
   if (window.__wsCheckInterval) {
     clearInterval(window.__wsCheckInterval)
-  }
-  if (restartCheckInterval) {
-    clearInterval(restartCheckInterval)
-    restartCheckInterval = null
   }
   if (poseRetryTimer) {
     clearInterval(poseRetryTimer)

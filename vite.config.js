@@ -3,6 +3,12 @@ import vue from '@vitejs/plugin-vue'
 import os from 'os'
 import fs from 'fs'
 import path from 'path'
+import localMotion from './vite-plugin-local-motion.js'
+
+// 本机动作库目录（dev server 直接读取，可用环境变量覆盖）
+const LOCAL_MOTION_DIR = process.env.LOCAL_MOTION_DIR || '/home/miuseik/下载/BVH'
+// Aider 机器人模型（URDF + meshes），演员列表里当"机器人本体"用
+const LOCAL_ROBOT_DIR = process.env.LOCAL_ROBOT_DIR || path.resolve(__dirname, '../aider_terminal/URDF/aider')
 
 // 获取局域网 IP
 function getLocalIP() {
@@ -34,7 +40,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, 'env'), 'VITE_')
   
   return {
-    plugins: [vue()],
+    plugins: [vue(), localMotion(LOCAL_MOTION_DIR, LOCAL_ROBOT_DIR)],
     envDir: path.resolve(__dirname, 'env'),
     resolve: {
       alias: {
