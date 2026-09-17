@@ -26,10 +26,11 @@ export function motionFileUrl(path) {
 
 /**
  * 开发机本地动作目录（vite dev 中间件直读磁盘，仅 dev server 上有）
- * 不走 axios（baseURL 是 /api，会被代理到后端）
- * 地址写死为本机绝对地址
+ * 不走 axios（baseURL 是 /api，会被代理到后端）。
+ * 用相对路径（页面同源）：从 localhost 或局域网 IP 打开都各用自己的 dev server，
+ * 不会跨域（此前写死 192.168.0.112，从 localhost 打开时被 CORS 拦截）。
  */
-const LOCAL_MOTION_BASE = 'https://192.168.0.112:3000'
+const LOCAL_MOTION_BASE = ''
 
 /** 递归列表；refresh=true 时忽略服务端缓存重扫 */
 export async function localMotionList(refresh = false) {
@@ -56,27 +57,6 @@ export function localMotionFileUrl(path) {
 
 /** Aider 机器人模型（URDF/STL）的地址前缀 */
 export const LOCAL_ROBOT_BASE = `${LOCAL_MOTION_BASE}/local-robot`
-
-/**
- * BVH → Python IK 解算 → 逐帧关节角序列（度）。
- * 后端调 terminal 的解算脚本（真机同款 pinocchio+pink IK），
- * 返回 {frame_time, n_frames, names, angles[[16]...], failed}。
- * 前端/真机/仿真消费同一份数据（单一真源）。失败返回 null。
- */
-export async function solveMotionIK(path) {
-  try {
-    const res = await fetch('/api/motion-ik', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path })
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    return json?.data || null
-  } catch (_) {
-    return null
-  }
-}
 
 /**
  * Aider 关节真实限位（度），来自后端 servo_routes 的 /api/get-servo-ids

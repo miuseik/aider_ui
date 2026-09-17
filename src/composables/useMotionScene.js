@@ -1,25 +1,22 @@
 /**
  * 动作预览的 three.js 场景。
  *
- * 负责：渲染器/相机/控制器生命周期、把动作装进场景（骨架或重定向到演员模型/机器人关节）、
- * 播放控制与进度同步。动作"从哪来"（列表/筛选/AIist）不归这里管。
+ * 负责：渲染器/相机/控制器生命周期、把动作装进场景、播放控制与进度同步。
+ *
+ * 动作数据（BVH 解析、骨架姿态、机器人关节角）全部来自 terminal（经 WS 广播），
+ * UI 只做可视化与交互 —— 不解析动作文件、不做 IK、不裁剪动作。
  */
 import { ref, nextTick } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
-import { motionFileUrl, fetchAiderJointLimits, solveMotionIK } from '../api/motion'
+import { motionFileUrl, fetchAiderJointLimits } from '../api/motion'
+import { wsClient } from '../utils/websocket'
 import { ACTORS, loadActorModel } from '../three/actors'
-import {
-  ACTOR_HEIGHT,
-  SKELETON_ZOOM,
-  boneBox,
-  retargetClipToModel,
-  scaleActorToHuman
-} from '../three/motionRetarget'
-import { findUrdfRobot, makeArmDriver, relaxJointLimits, extractArmClip, ARM_JOINT_COUNT } from '../three/aiderJoints'
+import { ACTOR_HEIGHT } from '../three/motionRetarget'
+import { findUrdfRobot, relaxJointLimits } from '../three/aiderJoints'
 import { createJointPlayer } from '../three/jointPlayer'
+import { createSkeletonPlayer } from '../three/skeletonPlayer'
 
 /**
  * @param {object} opts
@@ -33,14 +30,18 @@ export function useMotionScene({ canvasRef, error }) {
   const progress = ref(0)
   const speed = ref(1)
   const busyTip = ref('')
-  const aiderJoints = ref(0)         // Aider 模式下跟随动作的关节数
+  const aiderJoints = ref(0)         // 跟随动作的活动单元数（机器人=关节数，火柴人=活动骨骼数）
 
   let renderer, scene, camera, controls, mixer, clock, animId
   let currentObject = null
-  let action = null
-  let ghostGroup = null    // Aider 模式下的隐形"动作源"骨架（不可见，只提供骨骼旋转）
-  let armDriver = null     // 前端方向对齐 IK 驱动器（降级模式：Python IK 不可用时）
-  let jointPlayer = null   // Python IK 序列播放器（首选：数据即真机指令）
+  let action = null                  // FBX 自带动画的 clip 播放（模型文件侧，与 BVH 链路无关）
+  let jointPlayer = null             // 机器人关节角播放器（数据 = terminal 解算）
+  let skeletonPlayer = null          // 火柴人骨架播放器（数据 = terminal 解析）
+  // 动作解算走 WS：向 server 发 motion_ik_request，结果由 server 广播回来（terminal 算）
+  let pendingIK = null               // { path, actorKey, model, file }
+  let ikUnsub = null
+
+  const activePlayer = () => jointPlayer || skeletonPlayer
 
   function initThree() {
     if (renderer) return
@@ -91,14 +92,11 @@ export function useMotionScene({ canvasRef, error }) {
     animId = requestAnimationFrame(animate)
     const dt = clock.getDelta()
     if (mixer) mixer.update(dt)
-    if (jointPlayer) jointPlayer.update(dt * speed.value)
-    if (armDriver) {
-      ghostGroup?.updateMatrixWorld(true)
-      armDriver.update()
-    }
+    const p = activePlayer()
+    if (p) p.update(dt * speed.value)
     controls?.update()
     if (current.value?.duration) {
-      const t = action ? action.time : jointPlayer ? jointPlayer.time : 0
+      const t = action ? action.time : p ? p.time : 0
       currentTime.value = t
       progress.value = Math.min(1000, (t / current.value.duration) * 1000)
     }
@@ -120,16 +118,16 @@ export function useMotionScene({ canvasRef, error }) {
       }
       currentObject = null
     }
-    if (ghostGroup) {
-      scene?.remove(ghostGroup)
-      ghostGroup = null
-    }
-    armDriver = null
     if (jointPlayer) {
       jointPlayer.dispose()
       jointPlayer = null
     }
+    if (skeletonPlayer) {
+      skeletonPlayer.dispose()
+      skeletonPlayer = null
+    }
     aiderJoints.value = 0
+    pendingIK = null
     mixer?.stopAllAction()
     mixer = null
     action = null
@@ -149,9 +147,63 @@ export function useMotionScene({ canvasRef, error }) {
     controls.update()
   }
 
+  /** 订阅 server 广播的动作数据（terminal 算完经 server 推来），按演员分发播放 */
+  function initIkWs() {
+    if (ikUnsub) return
+    ikUnsub = wsClient.onMessage((msg) => {
+      if (msg?.type !== 'motion_ik_result') return
+      if (!pendingIK || msg.path !== pendingIK.path) return   // 非当前等待的目标，忽略
+      const { actorKey, model, file } = pendingIK
+      pendingIK = null
+      busyTip.value = ''
+      if (!msg.ok || !msg.data) {
+        error.value = `IK 解算失败：${msg.message || '未知原因'}`
+        return
+      }
+      const data = msg.data
+      file.duration = data.n_frames * data.frame_time
+      file.frames = data.n_frames
+      if (actorKey === 'skeleton') {
+        // 火柴人：terminal 的骨架数据 → 线段播放器（纯渲染，UI 不解析不裁剪）
+        if (!data.skeleton?.moving_positions?.length) {
+          error.value = '解算结果里没有骨架数据（terminal 侧脚本需要更新后重试）'
+          return
+        }
+        skeletonPlayer = createSkeletonPlayer({
+          scene,
+          skeleton: data.skeleton,
+          frameTime: data.frame_time
+        })
+        aiderJoints.value = data.skeleton.moving?.length || 0
+        fitCamera(skeletonPlayer.object, ACTOR_HEIGHT)
+        skeletonPlayer.play()
+        playing.value = true
+      } else {
+        // 机器人本体：terminal 的关节角 → jointPlayer
+        if (!data.angles?.length) {
+          error.value = '解算结果里没有关节角数据'
+          return
+        }
+        if (!model) {
+          error.value = '机器人模型未加载'
+          return
+        }
+        jointPlayer = createJointPlayer({
+          model,
+          names: data.names,
+          angles: data.angles,
+          frameTime: data.frame_time
+        })
+        aiderJoints.value = data.names.length
+        jointPlayer.play()
+        playing.value = true
+      }
+    })
+  }
+
   /**
    * 预览一个动作文件。
-   * @param {object} file 列表行（含 src / ext / url / path / raw）
+   * @param {object} file 列表行（含 src / ext / url / path / absPath / raw）
    * @param {string} actorKey 'skeleton' | ACTORS 的 key
    */
   async function loadMotion(file, actorKey) {
@@ -167,151 +219,57 @@ export function useMotionScene({ canvasRef, error }) {
         return
       }
 
-      let text = null
-      let buffer = null
-      if (file.src === 'picker') {
-        if (file.ext === 'bvh') text = await file.raw.text()
-        else buffer = await file.raw.arrayBuffer()
-      } else {
-        const url = file.url || motionFileUrl(file.path)
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`)
-        if (file.ext === 'bvh') text = await res.text()
-        else buffer = await res.arrayBuffer()
-      }
-
       if (file.ext === 'bvh') {
-        const result = new BVHLoader().parse(text)
+        // —— BVH 动作：数据全部来自 terminal（经 WS），UI 不解析动作文件 ——
+        if (file.src !== 'dir' || !file.absPath) {
+          error.value = '这个来源没有本机文件路径，无法交给 terminal 解算（请用「本机目录」里的文件）'
+          return
+        }
+        initIkWs()
 
+        // 机器人本体：先加载 URDF 模型再发请求 —— 避免"缓存秒回结果、模型还没加载完"的竞态
+        let model = null
         if (actorKey !== 'skeleton') {
-          // ⚠️ 变量名别叫 actor：会和组件的 actor ref 撞名，整段落进 TDZ 直接报
-          // "Cannot access 'actor' before initialization"
           const actorCfg = ACTORS[actorKey]
-          busyTip.value = '正在加载演员模型…（首次较慢）'
-          try {
-            const model = await loadActorModel(actorKey, (msg) => { busyTip.value = msg })
-            if (model) {
-              if (actorCfg.urdf) {
-                // 机器人本体：优先消费 Python 侧 IK 解算的关节角序列（真机同款解算，
-                // 预览=真机指令，单一数据源）；仅本机路径不可用/解算失败时回退前端映射
-                currentObject = model
-                scene.add(model)
-                fitCamera(model, ACTOR_HEIGHT)
-                const robot = findUrdfRobot(model)
-                if (robot) {
-                  // 限位优先取 server 的 servo_ids.yaml（唯一真源），后端不在时用内置兜底表
-                  relaxJointLimits(robot, (await fetchAiderJointLimits()) || undefined)
-
-                  let seq = null
-                  if (file.src === 'dir' && file.path) {
-                    busyTip.value = 'Python IK 解算中…（首次约 10-60s，结果有缓存）'
-                    try {
-                      seq = await solveMotionIK(file.path)
-                    } finally {
-                      busyTip.value = ''
-                    }
-                  }
-
-                  if (seq && seq.angles && seq.angles.length) {
-                    // 关节序列模式：BVH 已在 Python 端消化，不需要源骨架/前端映射
-                    jointPlayer = createJointPlayer({
-                      model,
-                      names: seq.names,
-                      angles: seq.angles,
-                      frameTime: seq.frame_time,
-                    })
-                    file.duration = seq.n_frames * seq.frame_time
-                    file.frames = seq.n_frames
-                    aiderJoints.value = seq.names.length
-                  } else {
-                    if (file.src === 'dir' && file.path) {
-                      error.value = 'IK 解算不可用，回退为前端映射预览（结果非真机指令）'
-                    }
-                    // 源骨架放进一个不可见容器当"动作源"（自己播 clip），
-                    // 每帧读它的骨骼世界旋转 → 方向对齐迭代驱动 Aider 关节
-                    const srcRoot = result.skeleton.bones[0]
-                    ghostGroup = new THREE.Group()
-                    ghostGroup.visible = false
-                    ghostGroup.add(srcRoot)
-                    scene.add(ghostGroup)
-                    mixer = new THREE.AnimationMixer(srcRoot)
-                    action = mixer.clipAction(result.clip)
-                    // 先把源骨架摆到 clip 第一帧，再建驱动器：
-                    // BVHLoader 解析出的绑定姿势不是第一帧姿态（多为 T-pose，而动作第一帧往往
-                    // 手臂下垂），以绑定姿势当 rest 会把"T-pose→第一帧"的差值也当动作，
-                    // 手臂会全程架在半空。与 retargetClipToModel 里取第一帧当源 rest 同理。
-                    action.play()
-                    mixer.update(0)
-                    // ⚠️ 采样"机器人零位几何"前必须先刷新整个场景的世界矩阵：
-                    // 刚 scene.add 的模型其外层装配旋转（URDF Z-up → three Y-up 的 -90°X）
-                    // 还没传播到 matrixWorld，此时算出的零位方向缺这一层，会差约 90°，
-                    // 后续 IK 会追一个错误的目标（手臂顶死在限位上）。
-                    scene.updateMatrixWorld(true)
-                    armDriver = makeArmDriver(srcRoot, robot)
-                    aiderJoints.value = armDriver.joints
-                  }
-                } else {
-                  error.value = '这个 URDF 里没有 joints 表，无法驱动关节'
-                }
-              } else {
-                scaleActorToHuman(model)
-                const retargeted = retargetClipToModel(
-                  result.clip,
-                  result.skeleton.bones[0],
-                  model,
-                  actorCfg.map
-                )
-                if (retargeted.tracks.length) {
-                  currentObject = model
-                  scene.add(model)
-                  mixer = new THREE.AnimationMixer(model)
-                  action = mixer.clipAction(retargeted)
-                  // 取景必须用骨骼包围盒：蒙皮网格的几何体包围盒还是模型原始尺寸（DAZ 约 190 单位），
-                  // 用它取景相机会被放到 far 之外，整屏空白
-                  fitCamera(model, ACTOR_HEIGHT, boneBox(model))
-                } else {
-                  error.value = `BVH 骨骼与模型对不上（源 ${result.skeleton.bones.length} 根骨骼），已回退为骨架显示`
-                }
-              }
-            }
-          } finally {
-            busyTip.value = ''
+          if (!actorCfg?.urdf) {
+            error.value = '该演员暂不支持（模型重定向数据暂未接入 terminal 通道）'
+            return
           }
+          model = await loadActorModel(actorKey, (msg) => { busyTip.value = msg })
+          if (!model) {
+            error.value = '演员模型加载失败'
+            return
+          }
+          currentObject = model
+          scene.add(model)
+          fitCamera(model, ACTOR_HEIGHT)
+          const robot = findUrdfRobot(model)
+          if (!robot) {
+            error.value = '这个 URDF 里没有 joints 表，无法驱动关节'
+            return
+          }
+          // 限位优先取 server 的 servo_ids.yaml（唯一真源），后端不在时用内置兜底表
+          relaxJointLimits(robot, (await fetchAiderJointLimits()) || undefined)
         }
 
-        if (!currentObject) {
-          // 骨架模式（或模型加载失败）：显示火柴人
-          const root = result.skeleton.bones[0]
-          currentObject = new THREE.Group()
-          currentObject.add(root)
-          const helper = new THREE.SkeletonHelper(root)
-          // SkeletonHelper 每帧只改顶点、不重算 boundingSphere：缩放后包围球还是旧的，
-          // 整个骨架会被视锥剔除（屏幕上什么都没有），必须关掉剔除
-          helper.frustumCulled = false
-          currentObject.add(helper)
-          scene.add(currentObject)
-          mixer = new THREE.AnimationMixer(root)
-          // 火柴人"只动胳膊"：只保留肩/肘/腕 track，身体站桩在绑定姿势 ——
-          // 与机器人本体吃同一批源骨骼的旋转，两边胳膊动作才可比。
-          // BVH 骨骼命名对不上映射表时回退完整 clip（保底能看）。
-          const armClip = extractArmClip(result.clip)
-          action = mixer.clipAction(armClip || result.clip)
-          aiderJoints.value = ARM_JOINT_COUNT
-          // BVH 单位是英寸（全身约 70 单位），按骨骼高度归一化到 1.75 米，
-          // 与模型演员同一基准，切换演员时不会一会儿大一会儿小
-          const raw = boneBox(root)
-          const h = raw ? raw.getSize(new THREE.Vector3()).y : 0
-          const target = ACTOR_HEIGHT * SKELETON_ZOOM
-          // ⚠️ 缩放要加在"骨骼根"上，不能加在外层 Group：
-          // SkeletonHelper 每帧把自己的顶点写成骨骼的【世界坐标】，若它所在的父节点也有缩放，
-          // 渲染时会再乘一次 → 骨架被压成 1/40 大小（屏幕上几乎看不见）
-          if (Number.isFinite(h) && h > 1e-6) root.scale.multiplyScalar(target / h)
-          fitCamera(currentObject, target, boneBox(root))
+        pendingIK = { path: file.absPath, actorKey, model, file }
+        const sent = wsClient.send({ type: 'motion_ik_request', path: file.absPath })
+        if (!sent) {
+          pendingIK = null
+          error.value = 'WebSocket 未连接，无法请求解算（确认 aider_server 在运行）'
+          return
         }
-
-        if (!file.duration) file.duration = result.clip.duration
-        if (!file.frames) file.frames = Math.round(result.clip.duration * 30)
+        busyTip.value = 'terminal 解析动作中…（骨架 + 机器人解算；首次约 10-60s）'
       } else if (file.ext === 'fbx') {
+        // FBX：模型+动画一体（文件侧，与 BVH 链路无关）——保留前端解析
+        let buffer = null
+        if (file.src === 'picker') buffer = await file.raw.arrayBuffer()
+        else {
+          const url = file.url || motionFileUrl(file.path)
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`)
+          buffer = await res.arrayBuffer()
+        }
         const obj = new FBXLoader().parse(buffer, '')
         currentObject = obj
         scene.add(obj)
@@ -328,9 +286,6 @@ export function useMotionScene({ canvasRef, error }) {
         action.play()
         mixer.timeScale = speed.value
         playing.value = true
-      } else if (jointPlayer) {
-        jointPlayer.play()
-        playing.value = true
       }
     } catch (err) {
       error.value = `加载失败：${err?.message || err}`
@@ -338,28 +293,32 @@ export function useMotionScene({ canvasRef, error }) {
   }
 
   function togglePlay() {
-    if (!action && !jointPlayer) return
+    if (!action && !activePlayer()) return
     playing.value = !playing.value
     if (action) action.paused = !playing.value
-    if (jointPlayer) playing.value ? jointPlayer.play() : jointPlayer.pause()
+    const p = activePlayer()
+    if (p) playing.value ? p.play() : p.pause()
   }
 
   function restart() {
-    if (!action && !jointPlayer) return
+    if (!action && !activePlayer()) return
     if (action) {
       action.reset()
       action.paused = false
     }
-    if (jointPlayer) jointPlayer.seek(0)
+    const p = activePlayer()
+    if (p) {
+      p.seek(0)
+      p.play()   // 暂停状态下点重播也要真正走起来（seek 不改变播放器 playing 标志）
+    }
     playing.value = true
-    // 动作回第一帧，机器人关节也归回 rest 姿势，IK 从基准重新起步
-    armDriver?.reset?.()
   }
 
   function seek(val) {
     const t = (val / 1000) * (current.value?.duration || 0)
-    if (jointPlayer) {
-      jointPlayer.seek(t)
+    const p = activePlayer()
+    if (p) {
+      p.seek(t)
       return
     }
     if (!action || !current.value?.duration) return
@@ -376,6 +335,8 @@ export function useMotionScene({ canvasRef, error }) {
     if (animId) cancelAnimationFrame(animId)
     animId = null
     window.removeEventListener('resize', onResize)
+    ikUnsub?.()
+    ikUnsub = null
     disposeScene()
     renderer?.dispose?.()
     renderer = null

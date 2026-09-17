@@ -62,10 +62,14 @@ export function useMotionList({ error, resetPreview, clearPreview, onPick }) {
     error.value = ''
     try {
       const res = await fetchDirList(refresh)
-      localRoot.value = res?.root || localRoot.value
+      const root = res?.root || localRoot.value
+      localRoot.value = root
       allFiles.value = (res?.files || []).map((f) => ({
         src: 'dir',
         path: f.path,
+        // 本机绝对路径：交给 aider_server 做 terminal IK 解算（server 只认绝对路径，
+        // path 字段是相对动作库根目录的，仅供文件流/meta 等中间件接口使用）
+        absPath: root ? `${root}/${f.path}` : f.path,
         url: localMotionFileUrl(f.path),
         category: f.category,
         name: f.name,

@@ -108,6 +108,15 @@ export default function localMotion(root, robotRoot) {
         const isRobot = url.pathname.startsWith('/local-robot/')
         if (!isMotion && !isRobot) return next()
 
+        // 允许跨源访问（万一从其它 origin 打开页面；预检 OPTIONS 一并放行）
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        if (req.method === 'OPTIONS') {
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+          res.statusCode = 204
+          return res.end()
+        }
+
         const json = (data, code = 200) => {
           res.statusCode = code
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
